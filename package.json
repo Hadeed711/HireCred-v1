@@ -1,0 +1,12 @@
+{
+  "name": "hirecred-v1",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "client"
+  ],
+  "scripts": {
+    "client": "npm run dev --workspace=client",
+    "server": "cd server && uvicorn main:app --reload --port 8000"
+  }
+}

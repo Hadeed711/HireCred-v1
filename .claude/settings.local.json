@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(.venv/Scripts/python.exe -c \"from src.ai.credibility_prompt import evaluate_profile; from src.services.credibility_service import compute_and_save_score; from src.routers.profile import router; print\\('All imports OK'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"from src.schemas.profile import ScoreResponse; print\\('ScoreResponse OK'\\)\")",
+      "Bash(npx tsc *)"
+    ]
+  }
+}
