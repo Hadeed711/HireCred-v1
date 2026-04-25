@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -9,7 +10,7 @@ from src.models.user import User
 from src.models.profile import Profile
 from src.models.credibility_score import CredibilityScore
 from src.schemas.profile import ProfileUpdate, ProfileResponse, ScoreResponse
-from src.middleware.auth import get_current_user
+from src.middleware.auth import get_current_user, get_optional_user
 from src.services.credibility_service import compute_and_save_score
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
@@ -84,11 +85,19 @@ async def get_score(user_ref: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{user_ref}", response_model=ProfileResponse)
-async def get_profile(user_ref: str, db: AsyncSession = Depends(get_db)):
+async def get_profile(
+    user_ref: str,
+    db: AsyncSession = Depends(get_db),
+    viewer: Optional[User] = Depends(get_optional_user),
+):
     user_id = await _resolve_user_id(user_ref, db)
     profile = await _get_profile_with_user(user_id, db)
-    profile.profile_views += 1
-    await db.commit()
+
+    # Don't count views from the profile owner
+    if not viewer or viewer.id != user_id:
+        profile.profile_views += 1
+        await db.commit()
+
     result = await db.execute(
         select(Profile)
         .where(Profile.id == profile.id)

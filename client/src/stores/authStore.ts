@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api from '../lib/api'
+import { queryClient } from '../lib/queryClient'
 
 export type UserRole = 'candidate' | 'client'
 
@@ -45,6 +46,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         localStorage.removeItem('hc_token')
+        queryClient.clear()
         set({ user: null, token: null, isAuthenticated: false })
       },
 

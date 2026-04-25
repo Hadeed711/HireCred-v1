@@ -35,10 +35,18 @@ function ExperienceForm({
   onChange: (item: ExperienceItem) => void
   onRemove: () => void
 }) {
+  // YYYY-MM of the current month — anything after this is genuinely future
+  const thisMonth = new Date().toISOString().slice(0, 7)
+
   function field(key: keyof ExperienceItem) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange({ ...item, [key]: e.target.value })
   }
+
+  const startIsFuture = item.start_date && item.start_date > thisMonth
+  const endIsFuture = !item.current && item.end_date && item.end_date > thisMonth
+  const endBeforeStart = !item.current && item.start_date && item.end_date && item.end_date < item.start_date
+
   return (
     <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
       <div className="grid grid-cols-2 gap-3">
@@ -54,17 +62,31 @@ function ExperienceForm({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Start Date</label>
-          <input className="input" type="month" value={item.start_date} onChange={field('start_date')} />
+          <input
+            className={`input ${startIsFuture ? 'border-amber-400 focus:ring-amber-300' : ''}`}
+            type="month"
+            value={item.start_date}
+            onChange={field('start_date')}
+          />
+          {startIsFuture && (
+            <p className="text-xs text-amber-600 mt-1">⚠ Start date is in the future</p>
+          )}
         </div>
         <div>
           <label className="label">End Date</label>
           <input
-            className="input"
+            className={`input ${endIsFuture || endBeforeStart ? 'border-amber-400 focus:ring-amber-300' : ''}`}
             type="month"
             value={item.end_date ?? ''}
             onChange={field('end_date')}
             disabled={item.current}
           />
+          {endIsFuture && (
+            <p className="text-xs text-amber-600 mt-1">⚠ End date is in the future</p>
+          )}
+          {endBeforeStart && !endIsFuture && (
+            <p className="text-xs text-amber-600 mt-1">⚠ End date is before start date</p>
+          )}
           <label className="flex items-center gap-2 mt-1 text-sm text-gray-500 cursor-pointer">
             <input
               type="checkbox"

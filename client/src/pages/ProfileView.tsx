@@ -147,7 +147,7 @@ export default function ProfileView() {
                 </button>
               )}
               <button
-                onClick={() => navigate(`/inbox/${profile.user_id}`)}
+                onClick={() => navigate(`/inbox/${profile.user_id}`, { state: { name: profile.owner_name } })}
                 className="text-sm px-4 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium shadow-sm shadow-indigo-200"
               >
                 Send Message

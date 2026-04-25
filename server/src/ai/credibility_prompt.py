@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 import google.generativeai as genai
 from src.config import settings
 
@@ -21,6 +22,8 @@ Scoring guidelines:
 - 51–70: Decent profile with skills and experience but missing proof or portfolio depth
 - 71–85: Good profile with proof signals and detailed content
 - 86–100: Excellent — complete, detailed, proof-backed, aligned, well-written
+
+IMPORTANT DATE RULE: The profile will include a "Today's date" field. Use that date as the reference for "now". Any experience date on or before that date is in the past — do NOT flag it as a future date or treat it as suspicious. Only flag start_date values that are strictly after today's date.
 
 Return ONLY valid JSON with this exact structure, no other text:
 {"credibility_score": 75, "strengths": ["specific strength 1", "specific strength 2"], "risks": ["specific risk 1"]}
@@ -56,7 +59,9 @@ async def evaluate_profile(profile_data: dict) -> dict:
 
 
 def _build_prompt(d: dict) -> str:
+    today = datetime.now(timezone.utc).strftime("%Y-%m")
     lines = ["# Candidate Profile\n"]
+    lines.append(f"**Today's date:** {today}")
     lines.append(f"**Name:** {d.get('owner_name', 'Unknown')}")
     lines.append(f"**Title:** {d.get('title') or 'Not specified'}")
     lines.append(f"**Location:** {d.get('location') or 'Not specified'}")

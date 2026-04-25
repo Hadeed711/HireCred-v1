@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { queryClient } from './queryClient'
 
 const api = axios.create({
   baseURL: '/api',
@@ -16,6 +17,7 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('hc_token')
+      queryClient.clear()
       window.location.href = '/login'
     }
     return Promise.reject(err)
