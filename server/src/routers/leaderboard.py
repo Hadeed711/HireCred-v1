@@ -14,6 +14,10 @@ router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
 _cache: dict = {"data": None, "expires_at": 0.0}
 _CACHE_TTL = 120  # 2 minutes
 
+# Invalidate on startup to pick up any formula changes
+_cache["data"] = None
+_cache["expires_at"] = 0.0
+
 
 def invalidate_leaderboard_cache() -> None:
     _cache["data"] = None
@@ -51,7 +55,7 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)):
         avg_ratings = ((avg_skill or 0.0) + (avg_comm or 0.0) + (avg_rel or 0.0)) / 3
 
         rank_score = (
-            (score.score * 0.5)
+            (score.score * 10)
             + (count * 2)
             + (avg_ratings * 3)
             + (profile.profile_views * 0.1)
