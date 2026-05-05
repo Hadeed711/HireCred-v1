@@ -236,7 +236,7 @@ Create them at: **http://localhost:5173/register**
 3. The appreciation modal opens — write a paragraph of feedback, e.g.:
    > "Ali delivered the project on time and communicated clearly throughout. The code quality was solid and he was responsive to feedback. Would definitely hire again."
 4. Click **"Submit Appreciation"**
-5. Wait a moment — the modal shows what Claude extracted:
+5. Wait a moment — the modal shows what Gemini extracted:
    - Skill rating (0–10)
    - Communication rating (0–10)
    - Reliability rating (0–10)
@@ -355,7 +355,7 @@ To test authenticated endpoints in Swagger:
 
 | Problem | Likely Cause | Fix |
 |---------|-------------|-----|
-| Score shows "—" and never loads | Background task failed (Claude API key invalid or profile empty) | Check `.env` for `ANTHROPIC_API_KEY`, fill profile before saving |
+| Score shows "—" and never loads | Background task failed (Gemini API key invalid or profile empty) | Check `.env` for `GEMINI_API_KEY`, fill profile before saving |
 | Search returns no results | No candidates in DB or skills don't overlap | Register a candidate, fill skills, then search for those exact skills |
 | "Only clients can submit appreciations" error | Logged in as a candidate | Log in as a client account |
 | Leaderboard empty | No candidates have credibility scores yet | Save a filled candidate profile first to trigger scoring |

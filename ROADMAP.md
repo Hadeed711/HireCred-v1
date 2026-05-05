@@ -1,6 +1,6 @@
 # HireCred-v1 — Build Roadmap
 
-**Stack:** React + Vite + TypeScript | Python + FastAPI | Neon DB (PostgreSQL) | Claude API  
+**Stack:** React + Vite + TypeScript | Python + FastAPI | Neon DB (PostgreSQL) | Gemini API  
 **Deadline:** 10 days from start (~2026-04-27)  
 **Structure:** monorepo root `/` with `client/` and `server/` subfolders
 
@@ -21,14 +21,14 @@
   fastapi uvicorn[standard] python-dotenv
   sqlalchemy[asyncio] asyncpg alembic
   python-jose[cryptography] passlib[bcrypt]
-  anthropic python-multipart pydantic
+  google-generativeai python-multipart pydantic
   ```
 - Save to `requirements.txt`
 - Create `server/.env.example`:
   ```
   DATABASE_URL=postgresql+asyncpg://...neon.tech/hirecred
   JWT_SECRET=your-secret-here
-  ANTHROPIC_API_KEY=sk-ant-...
+  GEMINI_API_KEY=your-gemini-api-key
   ```
 - Folder structure inside `server/`:
   ```
@@ -40,7 +40,7 @@
   │   ├── schemas/         # Pydantic request/response schemas
   │   ├── routers/         # Route files: auth, profile, search, etc.
   │   ├── services/        # Business logic (not in routers)
-  │   ├── ai/              # All Claude prompt logic lives here
+  │   ├── ai/              # All Gemini prompt logic lives here
   │   └── middleware/      # JWT auth dependency
   ├── alembic/             # DB migrations
   ├── alembic.ini
@@ -199,11 +199,11 @@ Message: id, from_user_id (FK), to_user_id (FK), content (text), read_at, create
     "risks": [<up to 4 specific risks or missing elements>]
   }
   ```
-- Use Claude's `tool_use` (tool with defined JSON schema) to enforce structured output
+- Use Gemini structured output with JSON schema where possible to enforce structured output
 
 ### 5.2 Service (`server/app/services/credibility_service.py`)
 - `async def compute_score(profile_data: dict) -> dict`
-- Calls Claude API with the prompt
+- Calls Gemini API with the prompt
 - Parses and validates response (fallback if malformed)
 - Saves/updates `CredibilityScore` row in DB
 
@@ -365,7 +365,7 @@ Return ONLY this JSON:
 
 ### 11.3 Environment & Deploy
 - Backend: deploy to Railway
-  - Set environment variables (DATABASE_URL, JWT_SECRET, ANTHROPIC_API_KEY)
+  - Set environment variables (DATABASE_URL, JWT_SECRET, GEMINI_API_KEY)
   - Neon DB connection already cloud-hosted
 - Frontend: deploy to Vercel
   - Set `VITE_API_URL` to Railway backend URL
