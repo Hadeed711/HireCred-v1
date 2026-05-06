@@ -1,10 +1,12 @@
 import json
 from datetime import datetime, timezone
+import logging
 import google.generativeai as genai
 from src.config import settings
 
 genai.configure(api_key=settings.gemini_api_key)
 _model = genai.GenerativeModel("gemini-2.5-flash")
+logger = logging.getLogger(__name__)
 
 _SYSTEM = """You are an expert hiring analyst evaluating a freelance/professional profile for the HireCred trust-based platform.
 
@@ -53,9 +55,9 @@ async def evaluate_profile(profile_data: dict) -> dict:
         data.setdefault("strengths", [])
         data.setdefault("risks", [])
         return data
-    except Exception as e:
-        # Fallback scoring
-        return {"credibility_score": 0, "strengths": [], "risks": ["Score could not be computed"]}
+    except Exception as exc:
+        logger.warning("Gemini credibility scoring failed: %s", exc)
+        raise RuntimeError(f"Gemini credibility scoring failed: {exc}") from exc
 
 
 def _build_prompt(d: dict) -> str:

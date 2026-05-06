@@ -97,8 +97,22 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
 
             try:
                 score_data = await evaluate_profile(profile_data)
-            except Exception:
-                logger.warning("AI scoring failed for user %s, using rule-based fallback", user_id)
+                if score_data.get("credibility_score") == 0 and score_data.get("risks") == ["Score could not be computed"]:
+                    raise RuntimeError("Gemini returned an error placeholder")
+            except Exception as exc:
+                reason = str(exc).strip() or exc.__class__.__name__
+                if any(token in reason.lower() for token in ("quota", "rate limit", "resourceexhausted", "429")):
+                    logger.warning(
+                        "Gemini quota or rate limit hit for user %s (%s); using rule-based fallback",
+                        user_id,
+                        reason,
+                    )
+                else:
+                    logger.warning(
+                        "AI scoring failed for user %s (%s); using rule-based fallback",
+                        user_id,
+                        reason,
+                    )
                 score_data = _rule_based_score(profile_data)
 
             score_result = await db.execute(
