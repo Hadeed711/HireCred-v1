@@ -69,6 +69,8 @@ class ProfileResponse(BaseModel):
     portfolio: list[dict[str, Any]]
     profile_views: int
     avatar_url: str | None
+    cv_url: str | None = None
+    cv_analysis: dict[str, Any] | None = None
     proof_signals: list[ProofSignalResponse]
     created_at: datetime
     updated_at: datetime

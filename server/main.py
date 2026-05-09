@@ -6,6 +6,7 @@ from src.routers import auth, profile, proof_signals, appreciation, search, lead
 
 UPLOADS_DIR = Path(__file__).parent / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
+(UPLOADS_DIR / "cv").mkdir(exist_ok=True)
 
 app = FastAPI(title="HireCred API", version="1.0.0")
 
@@ -31,3 +32,9 @@ app.include_router(messages.router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/health/ai")
+async def health_ai():
+    from src.ai.ollama_client import check_ollama_health
+    return await check_ollama_health()

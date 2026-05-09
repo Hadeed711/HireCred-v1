@@ -1,22 +1,38 @@
 import uuid
+import logging
+from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from src.database import get_db
-from src.models.user import User
+from src.models.user import User, UserRole
 from src.models.profile import Profile
 from src.models.credibility_score import CredibilityScore
 from src.schemas.profile import ProfileUpdate, ProfileResponse, ScoreResponse
 from src.middleware.auth import get_current_user, get_optional_user
 from src.services.credibility_service import compute_and_save_score
+from src.services.validation_service import validate_full_profile
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
+UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
+CV_DIR = UPLOADS_DIR / "cv"
+CV_DIR.mkdir(parents=True, exist_ok=True)
+
+ALLOWED_CV_MIME = {"application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+MAX_CV_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
+
 
 def _build_profile_response(profile: Profile) -> ProfileResponse:
+    cv_url = f"/uploads/cv/{profile.cv_file_path}" if profile.cv_file_path else None
     return ProfileResponse(
         id=profile.id,
         user_id=profile.user_id,
@@ -28,6 +44,8 @@ def _build_profile_response(profile: Profile) -> ProfileResponse:
         portfolio=profile.portfolio or [],
         profile_views=profile.profile_views,
         avatar_url=profile.avatar_url,
+        cv_url=cv_url,
+        cv_analysis=profile.cv_analysis,
         proof_signals=profile.proof_signals,
         created_at=profile.created_at,
         updated_at=profile.updated_at,
@@ -93,7 +111,6 @@ async def get_profile(
     user_id = await _resolve_user_id(user_ref, db)
     profile = await _get_profile_with_user(user_id, db)
 
-    # Don't count views from the profile owner
     if not viewer or viewer.id != user_id:
         profile.profile_views += 1
         await db.commit()
@@ -121,6 +138,20 @@ async def update_profile(
     profile = await _get_profile_with_user(user_id, db)
 
     update_data = body.model_dump(exclude_unset=True)
+
+    # Run authenticity validation before saving
+    validation_input = {
+        "bio": update_data.get("bio") or profile.bio or "",
+        "experience": update_data.get("experience") or profile.experience or [],
+        "portfolio": update_data.get("portfolio") or profile.portfolio or [],
+    }
+    errors = validate_full_profile(validation_input)
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=errors[0].message,
+        )
+
     for field, value in update_data.items():
         setattr(profile, field, value)
 
@@ -136,3 +167,84 @@ async def update_profile(
     background_tasks.add_task(compute_and_save_score, user_id)
 
     return _build_profile_response(profile)
+
+
+@router.post("/{user_id}/cv")
+async def upload_cv(
+    user_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit another user's profile")
+
+    if current_user.role != UserRole.candidate:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only candidates can upload a CV")
+
+    if file.content_type not in ALLOWED_CV_MIME:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF and DOCX files are accepted for CV upload.",
+        )
+
+    data = await file.read()
+    if len(data) > MAX_CV_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="CV file must be under 5 MB.",
+        )
+
+    # Save file
+    ext = Path(file.filename or "cv").suffix or ".pdf"
+    filename = f"{user_id}{ext}"
+    dest = CV_DIR / filename
+    dest.write_bytes(data)
+
+    # Persist to profile
+    result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+
+    # Remove old CV file if name changed
+    if profile.cv_file_path and profile.cv_file_path != filename:
+        (CV_DIR / profile.cv_file_path).unlink(missing_ok=True)
+
+    profile.cv_file_path = filename
+    profile.cv_analysis = None
+    await db.commit()
+
+    background_tasks.add_task(compute_and_save_score, user_id)
+
+    return {
+        "cv_url": f"/uploads/cv/{filename}",
+        "message": "CV uploaded successfully.",
+    }
+
+
+@router.delete("/{user_id}/cv", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_cv(
+    user_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit another user's profile")
+
+    result = await db.execute(select(Profile).where(Profile.user_id == user_id))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+
+    if profile.cv_file_path:
+        (CV_DIR / profile.cv_file_path).unlink(missing_ok=True)
+
+    profile.cv_file_path = None
+    profile.cv_analysis = None
+    await db.commit()
+
+    background_tasks.add_task(compute_and_save_score, user_id)

@@ -14,6 +14,7 @@ from src.models.profile import Profile
 from src.models.proof_signal import ProofSignal, SignalType
 from src.schemas.profile import ProofSignalCreate, ProofSignalResponse
 from src.middleware.auth import get_current_user
+from src.services.validation_service import validate_url, validate_image_content
 
 router = APIRouter(prefix="/api/profile", tags=["proof-signals"])
 
@@ -41,6 +42,12 @@ async def add_proof_signal(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Validate URL if provided
+    if body.url:
+        url_err = validate_url(body.url, "url")
+        if url_err:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=url_err.message)
+
     profile = await _get_own_profile(user_id, current_user, db)
     signal = ProofSignal(
         profile_id=profile.id,
@@ -94,6 +101,12 @@ async def upload_screenshot_signal(
     contents = await file.read()
     if len(contents) > MAX_FILE_SIZE:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds 5 MB limit")
+
+    # Validate image content (reject blank/solid-colour placeholders) for images only
+    if file.content_type and file.content_type.startswith("image/"):
+        img_err = validate_image_content(contents)
+        if img_err:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=img_err.message)
 
     profile = await _get_own_profile(user_id, current_user, db)
 

@@ -1,4 +1,4 @@
-import { useState, KeyboardEvent, useRef } from 'react'
+import { useState, type KeyboardEvent, useRef } from 'react'
 
 interface Props {
   skills: string[]

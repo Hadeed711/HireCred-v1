@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 def _rule_based_score(profile_data: dict) -> dict:
-    """Fallback scoring when AI is unavailable. Rewards profile completeness."""
-    score = 20  # base score
+    """Fallback scoring when Ollama is unavailable. Rewards profile completeness."""
+    score = 20
     strengths = []
     risks = []
 
@@ -27,34 +27,34 @@ def _rule_based_score(profile_data: dict) -> dict:
         risks.append("No bio provided")
 
     skills = profile_data.get("skills", [])
-    skill_pts = min(len(skills) * 3, 15)
-    score += skill_pts
+    score += min(len(skills) * 3, 15)
     if len(skills) >= 3:
         strengths.append(f"Lists {len(skills)} skills")
     elif len(skills) == 0:
         risks.append("No skills listed")
 
     experience = profile_data.get("experience", [])
-    exp_pts = min(len(experience) * 10, 20)
-    score += exp_pts
+    score += min(len(experience) * 10, 20)
     if len(experience) >= 1:
         strengths.append(f"Has {len(experience)} work experience entr{'y' if len(experience) == 1 else 'ies'}")
     else:
         risks.append("No experience listed")
 
     portfolio = profile_data.get("portfolio", [])
-    port_pts = min(len(portfolio) * 8, 16)
-    score += port_pts
+    score += min(len(portfolio) * 8, 16)
     if len(portfolio) >= 1:
         strengths.append(f"Showcases {len(portfolio)} portfolio project{'s' if len(portfolio) > 1 else ''}")
 
     proof_signals = profile_data.get("proof_signals", [])
-    signal_pts = min(len(proof_signals) * 5, 15)
-    score += signal_pts
+    score += min(len(proof_signals) * 5, 15)
     if len(proof_signals) >= 1:
         strengths.append(f"Submitted {len(proof_signals)} proof signal{'s' if len(proof_signals) > 1 else ''}")
     else:
         risks.append("No proof signals added")
+
+    if profile_data.get("cv_analysis", {}).get("is_authentic"):
+        score += 4
+        strengths.append("CV uploaded and verified")
 
     return {
         "credibility_score": min(score, 100),
@@ -64,7 +64,7 @@ def _rule_based_score(profile_data: dict) -> dict:
 
 
 async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
-    """Open a fresh DB session, load profile, call AI (with rule-based fallback), upsert score."""
+    """Open a fresh DB session, load profile, call Ollama (with rule-based fallback), upsert score."""
     async with AsyncSessionLocal() as db:
         try:
             result = await db.execute(
@@ -93,26 +93,16 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
                     }
                     for ps in profile.proof_signals
                 ],
+                "cv_analysis": profile.cv_analysis,
             }
 
             try:
                 score_data = await evaluate_profile(profile_data)
-                if score_data.get("credibility_score") == 0 and score_data.get("risks") == ["Score could not be computed"]:
-                    raise RuntimeError("Gemini returned an error placeholder")
+                if score_data.get("credibility_score") == 0 and not score_data.get("strengths"):
+                    raise RuntimeError("AI returned a zero score with no strengths")
             except Exception as exc:
                 reason = str(exc).strip() or exc.__class__.__name__
-                if any(token in reason.lower() for token in ("quota", "rate limit", "resourceexhausted", "429")):
-                    logger.warning(
-                        "Gemini quota or rate limit hit for user %s (%s); using rule-based fallback",
-                        user_id,
-                        reason,
-                    )
-                else:
-                    logger.warning(
-                        "AI scoring failed for user %s (%s); using rule-based fallback",
-                        user_id,
-                        reason,
-                    )
+                logger.warning("AI scoring failed for user %s (%s); using rule-based fallback", user_id, reason)
                 score_data = _rule_based_score(profile_data)
 
             score_result = await db.execute(

@@ -5,8 +5,18 @@ import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
 import SkillsTagInput from '../components/SkillsTagInput'
+import ValidationWarningBanner from '../components/validation/ValidationWarningBanner'
 import type { Profile, ExperienceItem, PortfolioItem, ProofSignal, SignalType } from '../lib/types'
 import { nanoid } from '../lib/nanoid'
+import {
+  validateBio,
+  validateUrl,
+  validateExperienceDescription,
+  findDuplicateExperience,
+  findDuplicatePortfolioUrl,
+  deduplicateSkills,
+  validateProfileForSave,
+} from '../lib/validators'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,18 +34,21 @@ const SIGNAL_ICONS: Record<SignalType, string> = {
   screenshot: '🖼️',
 }
 
-// ── sub-forms ────────────────────────────────────────────────────────────────
+// ── ExperienceForm ────────────────────────────────────────────────────────────
 
 function ExperienceForm({
   item,
+  index,
+  allEntries,
   onChange,
   onRemove,
 }: {
   item: ExperienceItem
+  index: number
+  allEntries: ExperienceItem[]
   onChange: (item: ExperienceItem) => void
   onRemove: () => void
 }) {
-  // YYYY-MM of the current month — anything after this is genuinely future
   const thisMonth = new Date().toISOString().slice(0, 7)
 
   function field(key: keyof ExperienceItem) {
@@ -46,9 +59,12 @@ function ExperienceForm({
   const startIsFuture = item.start_date && item.start_date > thisMonth
   const endIsFuture = !item.current && item.end_date && item.end_date > thisMonth
   const endBeforeStart = !item.current && item.start_date && item.end_date && item.end_date < item.start_date
+  const descErr = validateExperienceDescription(item.description)
+  const dupErr = item.company ? findDuplicateExperience(allEntries, index) : null
 
   return (
-    <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
+    <div className={`border rounded-xl p-4 space-y-3 bg-gray-50 ${dupErr ? 'border-red-300' : 'border-gray-200'}`}>
+      {dupErr && <p className="text-xs text-red-600 font-medium">{dupErr}</p>}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Job Title</label>
@@ -63,30 +79,24 @@ function ExperienceForm({
         <div>
           <label className="label">Start Date</label>
           <input
-            className={`input ${startIsFuture ? 'border-amber-400 focus:ring-amber-300' : ''}`}
+            className={`input ${startIsFuture ? 'border-amber-400' : ''}`}
             type="month"
             value={item.start_date}
             onChange={field('start_date')}
           />
-          {startIsFuture && (
-            <p className="text-xs text-amber-600 mt-1">⚠ Start date is in the future</p>
-          )}
+          {startIsFuture && <p className="text-xs text-amber-600 mt-1">Start date is in the future</p>}
         </div>
         <div>
           <label className="label">End Date</label>
           <input
-            className={`input ${endIsFuture || endBeforeStart ? 'border-amber-400 focus:ring-amber-300' : ''}`}
+            className={`input ${endIsFuture || endBeforeStart ? 'border-amber-400' : ''}`}
             type="month"
             value={item.end_date ?? ''}
             onChange={field('end_date')}
             disabled={item.current}
           />
-          {endIsFuture && (
-            <p className="text-xs text-amber-600 mt-1">⚠ End date is in the future</p>
-          )}
-          {endBeforeStart && !endIsFuture && (
-            <p className="text-xs text-amber-600 mt-1">⚠ End date is before start date</p>
-          )}
+          {endIsFuture && <p className="text-xs text-amber-600 mt-1">End date is in the future</p>}
+          {endBeforeStart && !endIsFuture && <p className="text-xs text-amber-600 mt-1">End date is before start date</p>}
           <label className="flex items-center gap-2 mt-1 text-sm text-gray-500 cursor-pointer">
             <input
               type="checkbox"
@@ -100,12 +110,13 @@ function ExperienceForm({
       <div>
         <label className="label">Description</label>
         <textarea
-          className="input resize-none"
+          className={`input resize-none ${descErr ? 'border-amber-400' : ''}`}
           rows={2}
           value={item.description}
           onChange={field('description')}
-          placeholder="What did you build / achieve?"
+          placeholder="What did you build / achieve? (min 40 chars if provided)"
         />
+        {descErr && <p className="text-xs text-amber-600 mt-1">{descErr}</p>}
       </div>
       <button type="button" onClick={onRemove} className="text-red-500 text-sm hover:underline">
         Remove
@@ -114,12 +125,18 @@ function ExperienceForm({
   )
 }
 
+// ── PortfolioForm ─────────────────────────────────────────────────────────────
+
 function PortfolioForm({
   item,
+  index,
+  allItems,
   onChange,
   onRemove,
 }: {
   item: PortfolioItem
+  index: number
+  allItems: PortfolioItem[]
   onChange: (item: PortfolioItem) => void
   onRemove: () => void
 }) {
@@ -127,8 +144,13 @@ function PortfolioForm({
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange({ ...item, [key]: e.target.value })
   }
+
+  const urlErr = item.url ? validateUrl(item.url) : null
+  const dupErr = item.url ? findDuplicatePortfolioUrl(allItems, index) : null
+  const hasErr = urlErr || dupErr
+
   return (
-    <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
+    <div className={`border rounded-xl p-4 space-y-3 bg-gray-50 ${hasErr ? 'border-red-300' : 'border-gray-200'}`}>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Project Name</label>
@@ -136,7 +158,14 @@ function PortfolioForm({
         </div>
         <div>
           <label className="label">URL</label>
-          <input className="input" value={item.url} onChange={field('url')} placeholder="https://..." />
+          <input
+            className={`input ${hasErr ? 'border-red-300 focus:ring-red-300' : ''}`}
+            value={item.url}
+            onChange={field('url')}
+            placeholder="https://..."
+          />
+          {urlErr && <p className="text-xs text-red-600 mt-1">{urlErr}</p>}
+          {dupErr && <p className="text-xs text-red-600 mt-1">{dupErr}</p>}
         </div>
       </div>
       <div>
@@ -163,7 +192,7 @@ function PortfolioForm({
   )
 }
 
-// ── main component ────────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function ProfileEditor() {
   const { user } = useAuthStore()
@@ -186,6 +215,10 @@ export default function ProfileEditor() {
   const [experience, setExperience] = useState<ExperienceItem[]>([])
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([])
 
+  // validation state
+  const [warningCount, setWarningCount] = useState(0)
+  const [activeWarnings, setActiveWarnings] = useState<string[]>([])
+
   // proof signal state
   const [signalType, setSignalType] = useState<SignalType>('github')
   const [signalTitle, setSignalTitle] = useState('')
@@ -194,6 +227,12 @@ export default function ProfileEditor() {
   const [signalFile, setSignalFile] = useState<File | null>(null)
   const [addingSignal, setAddingSignal] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // CV upload state
+  const [cvFile, setCvFile] = useState<File | null>(null)
+  const [cvUploading, setCvUploading] = useState(false)
+  const cvRef = useRef<HTMLInputElement>(null)
+
   const hasInitialized = useRef(false)
 
   useEffect(() => {
@@ -212,9 +251,20 @@ export default function ProfileEditor() {
     mutationFn: (data: object) => api.put(`/profile/${user?.id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profile', user?.id] })
+      setActiveWarnings([])
       toast.success('Profile saved!')
     },
-    onError: () => toast.error('Failed to save profile'),
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      if (msg) {
+        const newCount = warningCount + 1
+        setWarningCount(newCount)
+        setActiveWarnings([msg])
+        toast.error('Fix the issue before saving')
+      } else {
+        toast.error('Failed to save profile')
+      }
+    },
   })
 
   const deleteSignalMutation = useMutation({
@@ -226,12 +276,35 @@ export default function ProfileEditor() {
     onError: () => toast.error('Failed to remove signal'),
   })
 
+  function handleSkillsChange(newSkills: string[]) {
+    setSkills(deduplicateSkills(newSkills))
+  }
+
   function handleSave() {
+    // Client-side validation
+    const errors = validateProfileForSave({ bio, title, experience, portfolio, skills })
+    if (errors.length > 0) {
+      const newCount = warningCount + 1
+      setWarningCount(newCount)
+      setActiveWarnings(errors.map((e) => e.message))
+      return
+    }
+    setActiveWarnings([])
     saveMutation.mutate({ bio, title, location, skills, experience, portfolio })
   }
 
   async function handleAddSignal() {
     if (!signalTitle.trim()) { toast.error('Title is required'); return }
+
+    // Validate URL for non-screenshot signals
+    if (signalType !== 'screenshot' && signalUrl) {
+      const urlErr = validateUrl(signalUrl)
+      if (urlErr) {
+        toast.error(urlErr)
+        return
+      }
+    }
+
     setAddingSignal(true)
     try {
       if (signalType === 'screenshot' && signalFile) {
@@ -254,10 +327,45 @@ export default function ProfileEditor() {
       toast.success('Proof signal added!')
       setSignalTitle(''); setSignalUrl(''); setSignalDesc(''); setSignalFile(null)
       if (fileRef.current) fileRef.current.value = ''
-    } catch {
-      toast.error('Failed to add signal')
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'Failed to add signal')
     } finally {
       setAddingSignal(false)
+    }
+  }
+
+  async function handleCvRemove() {
+    try {
+      await api.delete(`/profile/${user?.id}/cv`)
+      qc.invalidateQueries({ queryKey: ['profile', user?.id] })
+      toast.success('CV removed')
+    } catch {
+      toast.error('Failed to remove CV')
+    }
+  }
+
+  async function handleCvUpload() {
+    if (!cvFile) return
+    setCvUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', cvFile)
+      await api.post(`/profile/${user?.id}/cv`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      qc.invalidateQueries({ queryKey: ['profile', user?.id] })
+      setCvFile(null)
+      if (cvRef.current) cvRef.current.value = ''
+      toast.success('CV uploaded and analyzed!')
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const newCount = warningCount + 1
+      setWarningCount(newCount)
+      setActiveWarnings([msg || 'CV upload failed — ensure it is a real, complete CV.'])
+      toast.error(msg || 'CV upload failed')
+    } finally {
+      setCvUploading(false)
     }
   }
 
@@ -269,7 +377,7 @@ export default function ProfileEditor() {
     )
   }
 
-  // Profile completion score (simple heuristic shown in the header)
+  // Completion heuristic
   const completionPoints = [
     !!bio.trim(),
     !!title.trim(),
@@ -278,18 +386,20 @@ export default function ProfileEditor() {
     experience.length >= 1,
     portfolio.length >= 1,
     (profile?.proof_signals?.length ?? 0) >= 1,
+    !!profile?.cv_url,
   ]
   const completionPct = Math.round((completionPoints.filter(Boolean).length / completionPoints.length) * 100)
   const completionColor = completionPct >= 80 ? 'bg-emerald-500' : completionPct >= 50 ? 'bg-amber-400' : 'bg-red-400'
 
+  const saveBlocked = warningCount >= 2 && activeWarnings.length > 0
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ── Sticky header ── */}
+      {/* Sticky header */}
       <header className="bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-10 shadow-sm">
         <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1.5 hover:bg-gray-100 px-2 py-1.5 rounded-lg transition-colors">
           ← Dashboard
         </button>
-        {/* Completion bar */}
         <div className="hidden sm:flex items-center gap-3">
           <div className="w-32 h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div className={`h-full rounded-full transition-all duration-500 ${completionColor}`} style={{ width: `${completionPct}%` }} />
@@ -305,7 +415,8 @@ export default function ProfileEditor() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || saveBlocked}
+            title={saveBlocked ? 'Fix all issues before saving' : undefined}
             className="text-sm px-4 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium shadow-sm shadow-indigo-200"
           >
             {saveMutation.isPending ? (
@@ -316,14 +427,17 @@ export default function ProfileEditor() {
                 </svg>
                 Saving…
               </span>
-            ) : 'Save changes'}
+            ) : saveBlocked ? '🚫 Fix Issues' : 'Save changes'}
           </button>
         </div>
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
 
-        {/* ── Basics ── */}
+        {/* Validation warning banner */}
+        <ValidationWarningBanner warnings={activeWarnings} warningCount={warningCount} />
+
+        {/* Basic Info */}
         <Section title="Basic Info">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -339,23 +453,26 @@ export default function ProfileEditor() {
             <div>
               <label className="label">Bio</label>
               <textarea
-                className="input resize-none"
+                className={`input resize-none ${bio.trim() && validateBio(bio) ? 'border-amber-400' : ''}`}
                 rows={4}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                placeholder="Tell hiring clients about yourself, your expertise, and what makes you different…"
+                placeholder="Tell hiring clients about yourself, your expertise, and what makes you different… (min 80 characters)"
               />
+              {bio.trim() && validateBio(bio) && (
+                <p className="text-xs text-amber-600 mt-1">{validateBio(bio)}</p>
+              )}
             </div>
           </div>
         </Section>
 
-        {/* ── Skills ── */}
+        {/* Skills */}
         <Section title="Skills">
-          <SkillsTagInput skills={skills} onChange={setSkills} />
-          <p className="mt-1.5 text-xs text-gray-400">Press Enter or comma to add. Backspace to remove last.</p>
+          <SkillsTagInput skills={skills} onChange={handleSkillsChange} />
+          <p className="mt-1.5 text-xs text-gray-400">Press Enter or comma to add. Duplicates are removed automatically.</p>
         </Section>
 
-        {/* ── Experience ── */}
+        {/* Experience */}
         <Section
           title="Experience"
           action={
@@ -368,14 +485,14 @@ export default function ProfileEditor() {
             </button>
           }
         >
-          {experience.length === 0 && (
-            <p className="text-sm text-gray-400">No experience added yet.</p>
-          )}
+          {experience.length === 0 && <p className="text-sm text-gray-400">No experience added yet.</p>}
           <div className="space-y-3">
             {experience.map((exp, i) => (
               <ExperienceForm
                 key={exp.id}
                 item={exp}
+                index={i}
+                allEntries={experience}
                 onChange={(updated) => setExperience(experience.map((e, j) => (j === i ? updated : e)))}
                 onRemove={() => setExperience(experience.filter((_, j) => j !== i))}
               />
@@ -383,7 +500,7 @@ export default function ProfileEditor() {
           </div>
         </Section>
 
-        {/* ── Portfolio ── */}
+        {/* Portfolio */}
         <Section
           title="Portfolio"
           action={
@@ -396,14 +513,14 @@ export default function ProfileEditor() {
             </button>
           }
         >
-          {portfolio.length === 0 && (
-            <p className="text-sm text-gray-400">No portfolio items yet.</p>
-          )}
+          {portfolio.length === 0 && <p className="text-sm text-gray-400">No portfolio items yet.</p>}
           <div className="space-y-3">
             {portfolio.map((item, i) => (
               <PortfolioForm
                 key={item.id}
                 item={item}
+                index={i}
+                allItems={portfolio}
                 onChange={(updated) => setPortfolio(portfolio.map((p, j) => (j === i ? updated : p)))}
                 onRemove={() => setPortfolio(portfolio.filter((_, j) => j !== i))}
               />
@@ -411,13 +528,72 @@ export default function ProfileEditor() {
           </div>
         </Section>
 
-        {/* ── Proof Signals ── */}
+        {/* CV Upload */}
+        <Section title="CV / Resume">
+          <p className="text-sm text-gray-500 mb-4">
+            Upload your CV to help hirers review your full background. Accepted formats: PDF, DOCX (max 5 MB).
+            The CV is analyzed by AI and must be a real, complete document.
+          </p>
+
+          {profile?.cv_url && (
+            <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-4">
+              <span className="text-emerald-600 text-lg">✓</span>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-emerald-800">CV uploaded</p>
+                {profile.cv_analysis?.experience_summary && (
+                  <p className="text-xs text-emerald-600 mt-0.5">{profile.cv_analysis.experience_summary}</p>
+                )}
+              </div>
+              <a
+                href={profile.cv_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors font-medium"
+              >
+                View CV
+              </a>
+              <button
+                type="button"
+                onClick={handleCvRemove}
+                title="Remove CV"
+                className="w-6 h-6 flex items-center justify-center rounded-full text-emerald-400 hover:text-red-500 hover:bg-red-50 transition-colors text-base font-bold leading-none"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          <div className="border border-dashed border-gray-300 rounded-xl p-4 bg-white space-y-3">
+            <div>
+              <label className="label">{profile?.cv_url ? 'Replace CV' : 'Upload CV'}</label>
+              <input
+                ref={cvRef}
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={(e) => setCvFile(e.target.files?.[0] ?? null)}
+                className="input text-sm"
+              />
+            </div>
+            {cvFile && (
+              <button
+                type="button"
+                onClick={handleCvUpload}
+                disabled={cvUploading}
+                className="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {cvUploading ? 'Uploading & analyzing…' : 'Upload CV'}
+              </button>
+            )}
+          </div>
+        </Section>
+
+        {/* Proof Signals */}
         <Section title="Proof Signals">
           <p className="text-sm text-gray-500 mb-4">
             Proof signals verify your claims. Add GitHub links, portfolio links, client references, or work screenshots.
+            Only real, working URLs are accepted.
           </p>
 
-          {/* existing signals */}
           {profile?.proof_signals && profile.proof_signals.length > 0 && (
             <div className="space-y-2 mb-6">
               {profile.proof_signals.map((s: ProofSignal) => (
@@ -442,7 +618,7 @@ export default function ProfileEditor() {
                   </div>
                   <button
                     onClick={() => deleteSignalMutation.mutate(s.id)}
-                    className="text-gray-300 hover:text-red-400 text-lg leading-none ml-2 flex-shrink-0"
+                    className="text-gray-300 hover:text-red-400 text-lg leading-none ml-2 shrink-0"
                     title="Remove"
                   >
                     ×
@@ -452,7 +628,6 @@ export default function ProfileEditor() {
             </div>
           )}
 
-          {/* add new signal */}
           <div className="border border-dashed border-gray-300 rounded-xl p-4 space-y-3 bg-white">
             <p className="text-sm font-medium text-gray-700">Add a new proof signal</p>
             <div className="grid grid-cols-2 gap-3">
@@ -484,7 +659,15 @@ export default function ProfileEditor() {
             ) : (
               <div>
                 <label className="label">URL</label>
-                <input className="input" value={signalUrl} onChange={(e) => setSignalUrl(e.target.value)} placeholder="https://..." />
+                <input
+                  className={`input ${signalUrl && validateUrl(signalUrl) ? 'border-red-300' : ''}`}
+                  value={signalUrl}
+                  onChange={(e) => setSignalUrl(e.target.value)}
+                  placeholder="https://..."
+                />
+                {signalUrl && validateUrl(signalUrl) && (
+                  <p className="text-xs text-red-600 mt-1">{validateUrl(signalUrl)}</p>
+                )}
               </div>
             )}
 

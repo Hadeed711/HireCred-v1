@@ -19,6 +19,8 @@ class Profile(Base):
     portfolio: Mapped[list[dict]] = mapped_column(JSONB, default=list)
     profile_views: Mapped[int] = mapped_column(Integer, default=0)
     avatar_url: Mapped[str | None] = mapped_column(String(500))
+    cv_file_path: Mapped[str | None] = mapped_column(String(500))
+    cv_analysis: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -56,6 +56,13 @@ export interface CredibilityScore {
   computed_at: string
 }
 
+export interface CvAnalysis {
+  extracted_skills: string[]
+  experience_summary: string
+  is_authentic: boolean
+  rejection_reason: string
+}
+
 export interface Profile {
   id: string
   user_id: string
@@ -67,6 +74,8 @@ export interface Profile {
   portfolio: PortfolioItem[]
   profile_views: number
   avatar_url: string | null
+  cv_url: string | null
+  cv_analysis: CvAnalysis | null
   proof_signals: ProofSignal[]
   created_at: string
   updated_at: string

@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import api from '../lib/api'
@@ -18,6 +18,8 @@ interface CandidateResult {
 }
 
 interface ParsedIntent {
+  search_tier: string
+  profession_keywords: string[]
   required_skills: string[]
   trust_keywords: string[]
   trust_priority: boolean
@@ -27,6 +29,7 @@ interface ParsedIntent {
 interface SearchResponse {
   parsed: ParsedIntent
   results: CandidateResult[]
+  search_tier_used: string
 }
 
 function scoreStyle(score: number) {
@@ -165,12 +168,35 @@ export default function SearchPage() {
         {/* Loading */}
         {isPending && <LoadingState />}
 
+        {/* Tier notice — domain fallback */}
+        {!isPending && data && data.search_tier_used === 'domain' && data.results.length > 0 && (
+          <div className="flex items-center gap-2 p-3 mb-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+            <span>⚠️</span>
+            <span>No exact match found — showing the most related profiles for your query.</span>
+          </div>
+        )}
+
         {/* Parsed intent chips */}
-        {!isPending && data && (data.parsed.required_skills.length > 0 || data.parsed.trust_priority || data.parsed.experience_level) && (
+        {!isPending && data && (
+          data.parsed.profession_keywords.length > 0 ||
+          data.parsed.required_skills.length > 0 ||
+          data.parsed.trust_priority ||
+          data.parsed.experience_level
+        ) && (
           <div className="flex flex-wrap gap-2 mb-5 items-center p-3 bg-indigo-50/60 rounded-xl border border-indigo-100">
             <span className="text-xs text-indigo-500 font-semibold">AI understood:</span>
+            {data.search_tier_used === 'profession' && (
+              <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded-full font-semibold border border-indigo-200">
+                Profession search
+              </span>
+            )}
+            {data.parsed.profession_keywords.map((p) => (
+              <span key={p} className="px-2.5 py-0.5 bg-white text-indigo-700 text-xs rounded-full font-semibold capitalize border border-indigo-200 shadow-sm">
+                {p}
+              </span>
+            ))}
             {data.parsed.required_skills.map((s) => (
-              <span key={s} className="px-2.5 py-0.5 bg-white text-indigo-700 text-xs rounded-full font-semibold capitalize border border-indigo-200 shadow-sm">
+              <span key={s} className="px-2.5 py-0.5 bg-white text-violet-700 text-xs rounded-full font-semibold capitalize border border-violet-200 shadow-sm">
                 {s}
               </span>
             ))}
@@ -201,7 +227,10 @@ export default function SearchPage() {
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-gray-400 font-medium px-1">
-                  {data.results.length} candidate{data.results.length !== 1 ? 's' : ''} ranked by HireCred score · skill match · client ratings
+                  {data.results.length} candidate{data.results.length !== 1 ? 's' : ''} ·{' '}
+                  {data.search_tier_used === 'profession' ? 'exact profession match' :
+                   data.search_tier_used === 'domain' ? 'related profiles (semantic)' :
+                   'ranked by HireCred score · skill match · client ratings'}
                 </p>
                 {data.results.map((candidate, idx) => {
                   const style = scoreStyle(candidate.credibility_score)

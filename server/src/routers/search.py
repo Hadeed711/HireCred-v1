@@ -28,6 +28,8 @@ class CandidateResult(BaseModel):
 
 
 class ParsedIntent(BaseModel):
+    search_tier: str = "skill"
+    profession_keywords: list[str] = []
     required_skills: list[str]
     trust_keywords: list[str]
     trust_priority: bool
@@ -38,6 +40,7 @@ class ParsedIntent(BaseModel):
 class SearchResponse(BaseModel):
     parsed: ParsedIntent
     results: list[CandidateResult]
+    search_tier_used: str = "skill"
 
 
 @router.post("", response_model=SearchResponse)

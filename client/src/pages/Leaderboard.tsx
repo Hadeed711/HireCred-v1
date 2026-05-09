@@ -11,12 +11,15 @@ interface LeaderboardEntry {
   credibility_score: number
   appreciation_count: number
   avg_ratings: number
+  proof_signal_count: number
+  fraud_risk: 'low' | 'medium' | 'high'
+  insufficient_data: boolean
 }
 
-const RANK_META: Record<number, { ring: string; badge: string; label: string; emoji: string }> = {
-  1: { ring: 'ring-2 ring-yellow-300', badge: 'bg-yellow-400 text-yellow-900', label: '#1', emoji: '🥇' },
-  2: { ring: 'ring-2 ring-gray-300',   badge: 'bg-gray-300 text-gray-800',    label: '#2', emoji: '🥈' },
-  3: { ring: 'ring-2 ring-orange-300', badge: 'bg-orange-300 text-orange-900', label: '#3', emoji: '🥉' },
+const RANK_META: Record<number, { ring: string; badge: string; emoji: string }> = {
+  1: { ring: 'ring-2 ring-yellow-300', badge: 'bg-yellow-400 text-yellow-900', emoji: '🥇' },
+  2: { ring: 'ring-2 ring-gray-300',   badge: 'bg-gray-300 text-gray-800',    emoji: '🥈' },
+  3: { ring: 'ring-2 ring-orange-300', badge: 'bg-orange-300 text-orange-900', emoji: '🥉' },
 }
 
 function scoreColor(score: number) {
@@ -48,6 +51,9 @@ export default function Leaderboard() {
     staleTime: 2 * 60_000,
   })
 
+  const insufficientData = data && data.length > 0 && data[0].insufficient_data
+  const qualifiedData = data?.filter((e) => !e.insufficient_data) ?? data
+
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-indigo-50">
       <header className="bg-white/80 backdrop-blur border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
@@ -66,13 +72,21 @@ export default function Leaderboard() {
 
       <main className="max-w-2xl mx-auto px-4 py-8">
         {/* Hero banner */}
-        <div className="bg-linear-to-r from-indigo-600 to-violet-600 text-white rounded-2xl p-6 mb-8 text-center shadow-lg">
+        <div className="bg-linear-to-r from-indigo-600 to-violet-600 text-white rounded-2xl p-6 mb-6 text-center shadow-lg">
           <p className="text-4xl mb-2">🏆</p>
           <h2 className="text-xl font-bold mb-1">Top Trusted Professionals</h2>
           <p className="text-indigo-200 text-sm">
-            Ranked by HireCred score, client appreciation, and profile activity
+            Ranked by HireCred score · client appreciation · proof signals · activity
           </p>
         </div>
+
+        {/* Insufficient data notice */}
+        {insufficientData && (
+          <div className="flex items-center gap-2 p-3 mb-5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+            <span>🌱</span>
+            <span>Not enough verified data yet — showing profiles sorted by trust completeness.</span>
+          </div>
+        )}
 
         {isLoading && (
           <div className="space-y-3">
@@ -91,16 +105,16 @@ export default function Leaderboard() {
         {data && data.length === 0 && (
           <div className="text-center py-16">
             <p className="text-4xl mb-3">🌱</p>
-            <p className="text-gray-600 font-medium">No candidates yet</p>
-            <p className="text-gray-400 text-sm mt-1">
-              Candidates appear here after completing and saving their profile.
+            <p className="text-gray-600 font-medium">No qualified candidates yet</p>
+            <p className="text-gray-400 text-sm mt-1 max-w-xs mx-auto">
+              Candidates appear here after completing their profile and receiving at least one client appreciation.
             </p>
           </div>
         )}
 
-        {data && data.length > 0 && (
+        {qualifiedData && qualifiedData.length > 0 && (
           <div className="space-y-3">
-            {data.map((entry) => {
+            {qualifiedData.map((entry) => {
               const meta = RANK_META[entry.rank]
               const colors = scoreColor(entry.credibility_score)
               return (
@@ -126,13 +140,18 @@ export default function Leaderboard() {
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-semibold text-gray-900 text-sm truncate group-hover:text-indigo-600 transition-colors">
                         {entry.name}
                       </p>
                       {entry.uid && (
                         <span className="text-xs font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">
                           #{entry.uid}
+                        </span>
+                      )}
+                      {entry.fraud_risk === 'medium' && (
+                        <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium shrink-0">
+                          ⚠ Unverified reviews
                         </span>
                       )}
                     </div>
@@ -145,11 +164,18 @@ export default function Leaderboard() {
                         ))}
                       </div>
                     )}
-                    {entry.appreciation_count > 0 && (
-                      <p className="text-xs text-gray-400 mt-1">
-                        ⭐ {entry.avg_ratings.toFixed(1)} avg · {entry.appreciation_count} review{entry.appreciation_count !== 1 ? 's' : ''}
-                      </p>
-                    )}
+                    <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                      {entry.appreciation_count > 0 && (
+                        <span className="text-xs text-gray-400">
+                          ⭐ {entry.avg_ratings.toFixed(1)} avg · {entry.appreciation_count} review{entry.appreciation_count !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {entry.proof_signal_count > 0 && (
+                        <span className="text-xs text-gray-400">
+                          🔐 {entry.proof_signal_count} proof signal{entry.proof_signal_count !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Score */}

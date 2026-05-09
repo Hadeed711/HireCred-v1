@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
-import type { Profile, ExperienceItem, PortfolioItem, ProofSignal, SignalType, CredibilityScore } from '../lib/types'
+import type { Profile, ExperienceItem, PortfolioItem, ProofSignal, SignalType, CredibilityScore, CvAnalysis } from '../lib/types'
 import ScoreWidget from '../components/profile/ScoreWidget'
 import AppreciationModal from '../components/appreciation/AppreciationModal'
 import AppreciationSection from '../components/appreciation/AppreciationSection'
@@ -107,10 +107,7 @@ export default function ProfileView() {
 
   const isOwn = user?.id === profile.user_id
   const isClient = user?.role === 'client'
-
-  const scoreRingColor = score
-    ? score.score >= 70 ? '#22c55e' : score.score >= 40 ? '#f97316' : '#ef4444'
-    : '#e5e7eb'
+  const isHirer = isAuthenticated && !isOwn
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-indigo-50">
@@ -312,6 +309,11 @@ export default function ProfileView() {
           </ViewSection>
         )}
 
+        {/* ── CV (visible to hirers only) ── */}
+        {isHirer && profile.cv_url && (
+          <CvSection cvUrl={profile.cv_url} cvAnalysis={profile.cv_analysis} />
+        )}
+
         {/* ── Proof Signals ── */}
         {profile.proof_signals.length > 0 && (
           <ViewSection title="Proof Signals" icon="🔐">
@@ -369,6 +371,40 @@ export default function ProfileView() {
         />
       )}
     </div>
+  )
+}
+
+function CvSection({ cvUrl, cvAnalysis }: { cvUrl: string; cvAnalysis: CvAnalysis | null }) {
+  return (
+    <ViewSection title="CV / Resume" icon="📄">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex-1 min-w-0">
+          {cvAnalysis?.experience_summary && (
+            <p className="text-sm text-gray-600 mb-2">{cvAnalysis.experience_summary}</p>
+          )}
+          {cvAnalysis?.extracted_skills && cvAnalysis.extracted_skills.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {cvAnalysis.extracted_skills.slice(0, 8).map((s) => (
+                <span key={s} className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md font-medium border border-blue-100">
+                  {s}
+                </span>
+              ))}
+              {cvAnalysis.extracted_skills.length > 8 && (
+                <span className="text-xs text-gray-400 self-center">+{cvAnalysis.extracted_skills.length - 8} more</span>
+              )}
+            </div>
+          )}
+        </div>
+        <a
+          href={cvUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 text-sm px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium shadow-sm shadow-indigo-200"
+        >
+          View CV ↗
+        </a>
+      </div>
+    </ViewSection>
   )
 }
 
