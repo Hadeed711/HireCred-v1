@@ -12,6 +12,7 @@ export interface User {
   full_name: string
   role: UserRole
   is_active: boolean
+  is_admin: boolean
   created_at: string
 }
 
@@ -20,6 +21,7 @@ interface AuthState {
   token: string | null
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
+  loginAdmin: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, full_name: string, role: UserRole) => Promise<void>
   logout: () => void
   fetchMe: () => Promise<void>
@@ -34,6 +36,17 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (email, password) => {
         const { data } = await api.post('/auth/login', { email, password })
+        localStorage.setItem('hc_token', data.access_token)
+        set({ user: data.user, token: data.access_token, isAuthenticated: true })
+      },
+
+      loginAdmin: async (email, password) => {
+        const { data } = await api.post('/auth/login', { email, password })
+        if (!data?.user?.is_admin) {
+          localStorage.removeItem('hc_token')
+          set({ user: null, token: null, isAuthenticated: false })
+          throw new Error('This account is not allowed to access admin portal.')
+        }
         localStorage.setItem('hc_token', data.access_token)
         set({ user: data.user, token: data.access_token, isAuthenticated: true })
       },

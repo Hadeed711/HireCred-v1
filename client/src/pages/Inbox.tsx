@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, MessageCircle, ImageIcon, SendHorizonal, Trash2 } from 'lucide-react'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
 import toast from 'react-hot-toast'
@@ -19,7 +20,9 @@ interface MessageItem {
   sender_id: string
   sender_name: string
   content: string
+  image_url: string | null
   is_read: boolean
+  is_deleted: boolean
   created_at: string
 }
 
@@ -27,14 +30,8 @@ const AVATAR_COLORS = [
   'bg-indigo-500', 'bg-violet-500', 'bg-blue-500',
   'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-teal-500',
 ]
-
-function avatarColor(name: string) {
-  return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length]
-}
-
-function initial(name: string) {
-  return name.charAt(0).toUpperCase()
-}
+function avatarColor(name: string) { return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length] }
+function initial(name: string) { return name.charAt(0).toUpperCase() }
 
 function convTime(dateStr: string) {
   const d = new Date(dateStr)
@@ -61,9 +58,18 @@ export default function Inbox() {
   const navName = (location.state as { name?: string } | null)?.name
   const { user } = useAuthStore()
   const qc = useQueryClient()
+
   const [draft, setDraft] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [uploadingImg, setUploadingImg] = useState(false)
+  const [pendingImageUrl, setPendingImageUrl] = useState<string | null>(null)
+  const [hoveredMsg, setHoveredMsg] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<string | null>(null)
+
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const imgInputRef = useRef<HTMLInputElement>(null)
 
   const { data: conversations, isLoading: convsLoading } = useQuery<Conversation[]>({
     queryKey: ['conversations'],
@@ -89,11 +95,39 @@ export default function Inbox() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [thread])
 
+  // When user picks an image — upload immediately and store URL
+  async function handleImagePick(file: File) {
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+    setUploadingImg(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await api.post('/messages/upload-image', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setPendingImageUrl(res.data.image_url)
+    } catch {
+      toast.error('Image upload failed')
+      clearImage()
+    } finally {
+      setUploadingImg(false)
+    }
+  }
+
+  function clearImage() {
+    setImageFile(null)
+    setImagePreview(null)
+    setPendingImageUrl(null)
+    if (imgInputRef.current) imgInputRef.current.value = ''
+  }
+
   const sendMutation = useMutation({
-    mutationFn: (content: string) =>
-      api.post('/messages', { to_user_id: otherUserId, content }),
+    mutationFn: (payload: { content: string; image_url?: string }) =>
+      api.post('/messages', { to_user_id: otherUserId, ...payload }),
     onSuccess: () => {
       setDraft('')
+      clearImage()
       if (textareaRef.current) {
         textareaRef.current.style.height = '22px'
         textareaRef.current.focus()
@@ -104,10 +138,16 @@ export default function Inbox() {
     onError: () => toast.error('Failed to send message'),
   })
 
-  const handleSend = () => {
+  const deleteMutation = useMutation({
+    mutationFn: (msgId: string) => api.delete(`/messages/${msgId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['thread', otherUserId] }),
+    onError: () => toast.error('Failed to delete message'),
+  })
+
+  function handleSend() {
     const trimmed = draft.trim()
-    if (!trimmed || sendMutation.isPending) return
-    sendMutation.mutate(trimmed)
+    if ((!trimmed && !pendingImageUrl) || sendMutation.isPending || uploadingImg) return
+    sendMutation.mutate({ content: trimmed, image_url: pendingImageUrl ?? undefined })
   }
 
   const activeConv = conversations?.find((c) => c.other_user_id === otherUserId)
@@ -126,15 +166,25 @@ export default function Inbox() {
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
+          onClick={() => setLightbox(null)}
+        >
+          <button className="absolute top-4 right-4 text-white text-3xl leading-none" onClick={() => setLightbox(null)}>×</button>
+          <img src={lightbox} className="max-w-full max-h-full rounded-xl" alt="Full size" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+
       {/* Page header */}
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shrink-0 shadow-sm">
         <button
           onClick={() => (otherUserId ? navigate('/inbox') : navigate('/dashboard'))}
           className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors shrink-0"
         >
-          ←
+          <ArrowLeft className="h-4 w-4" />
         </button>
-
         {otherUserId && contactName ? (
           <div className="flex items-center gap-2.5 min-w-0">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0 ${avatarColor(contactName)}`}>
@@ -146,9 +196,7 @@ export default function Inbox() {
             </div>
           </div>
         ) : (
-          <h1 className="text-sm font-semibold text-gray-900">
-            {otherUserId ? 'Conversation' : 'Inbox'}
-          </h1>
+          <h1 className="text-sm font-semibold text-gray-900">{otherUserId ? 'Conversation' : 'Inbox'}</h1>
         )}
       </header>
 
@@ -158,7 +206,6 @@ export default function Inbox() {
           <div className="px-4 py-3 border-b border-gray-100">
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Messages</h2>
           </div>
-
           <div className="flex-1 overflow-y-auto">
             {convsLoading && (
               <div className="space-y-1 p-2">
@@ -173,15 +220,15 @@ export default function Inbox() {
                 ))}
               </div>
             )}
-
             {!convsLoading && (!conversations || conversations.length === 0) && (
               <div className="flex flex-col items-center justify-center h-full py-12 px-6 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-2xl mb-3">💬</div>
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mb-3">
+                <MessageCircle className="h-6 w-6 text-indigo-400" />
+              </div>
                 <p className="text-sm font-medium text-gray-700">No conversations yet</p>
                 <p className="text-xs text-gray-400 mt-1">Visit a profile to send the first message.</p>
               </div>
             )}
-
             <div className="p-2 space-y-0.5">
               {conversations?.map((conv) => {
                 const isActive = conv.other_user_id === otherUserId
@@ -206,7 +253,7 @@ export default function Inbox() {
                           {conv.last_message}
                         </p>
                         {conv.unread_count > 0 && (
-                          <span className="bg-indigo-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shrink-0 font-semibold">
+                          <span className="bg-indigo-600 text-white text-xs rounded-full min-w-4.5 h-4.5 flex items-center justify-center px-1 shrink-0 font-semibold">
                             {conv.unread_count}
                           </span>
                         )}
@@ -226,8 +273,8 @@ export default function Inbox() {
             <div className="flex-1 overflow-y-auto px-4 py-5 bg-gray-50">
               {thread?.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full gap-3 py-16">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-sm ${contactName ? avatarColor(contactName) : 'bg-indigo-400'}`}>
-                    {contactName ? initial(contactName) : '👋'}
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold shadow-sm ${contactName ? avatarColor(contactName) : 'bg-indigo-400'}`}>
+                    {contactName ? initial(contactName) : <MessageCircle className="h-6 w-6" />}
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-semibold text-gray-700">
@@ -240,21 +287,25 @@ export default function Inbox() {
 
               {grouped.map(({ label, msgs }) => (
                 <div key={label} className="mb-2">
-                  {/* Date separator */}
                   <div className="flex items-center gap-3 py-3">
                     <div className="flex-1 h-px bg-gray-200" />
                     <span className="text-xs text-gray-400 font-medium shrink-0">{label}</span>
                     <div className="flex-1 h-px bg-gray-200" />
                   </div>
-
                   <div className="space-y-1">
                     {msgs.map((msg, idx) => {
                       const isMe = msg.sender_id === user?.id
                       const isLastInGroup = !msgs[idx + 1] || msgs[idx + 1].sender_id !== msg.sender_id
+                      const isHovered = hoveredMsg === msg.id
 
                       return (
-                        <div key={msg.id} className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                          {/* Avatar slot — only shown for last message in a received group */}
+                        <div
+                          key={msg.id}
+                          className={`flex items-end gap-2 group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+                          onMouseEnter={() => setHoveredMsg(msg.id)}
+                          onMouseLeave={() => setHoveredMsg(null)}
+                        >
+                          {/* Avatar slot */}
                           <div className="w-7 shrink-0">
                             {!isMe && isLastInGroup && contactName && (
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${avatarColor(contactName)}`}>
@@ -264,17 +315,49 @@ export default function Inbox() {
                           </div>
 
                           <div className={`flex flex-col max-w-xs md:max-w-md ${isMe ? 'items-end' : 'items-start'}`}>
-                            <div className={`px-3.5 py-2.5 text-sm leading-relaxed ${
-                              isMe
-                                ? 'bg-indigo-600 text-white rounded-2xl rounded-br-md'
-                                : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-bl-md shadow-sm'
-                            }`}>
-                              {msg.content}
-                            </div>
+                            {/* Deleted message */}
+                            {msg.is_deleted ? (
+                              <p className="text-xs text-gray-400 italic px-3 py-2">Message deleted</p>
+                            ) : (
+                              <>
+                                {/* Image */}
+                                {msg.image_url && (
+                                  <img
+                                    src={msg.image_url}
+                                    alt="Shared image"
+                                    className="max-w-55 rounded-xl mb-1 cursor-pointer hover:opacity-90 transition-opacity"
+                                    onClick={() => setLightbox(msg.image_url!)}
+                                  />
+                                )}
+                                {/* Text bubble */}
+                                {msg.content && (
+                                  <div className={`px-3.5 py-2.5 text-sm leading-relaxed ${
+                                    isMe
+                                      ? 'bg-indigo-600 text-white rounded-2xl rounded-br-md'
+                                      : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-bl-md shadow-sm'
+                                  }`}>
+                                    {msg.content}
+                                  </div>
+                                )}
+                              </>
+                            )}
+
                             {isLastInGroup && (
-                              <p className="text-xs text-gray-400 mt-1 px-1">
-                                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </p>
+                              <div className={`flex items-center gap-2 mt-1 px-1 ${isMe ? 'flex-row-reverse' : ''}`}>
+                                <p className="text-xs text-gray-400">
+                                  {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                                {/* Delete button — own messages only */}
+                                {isMe && !msg.is_deleted && isHovered && (
+                                  <button
+                                    onClick={() => deleteMutation.mutate(msg.id)}
+                                    className="text-gray-300 hover:text-red-400 transition-colors"
+                                    title="Delete message"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -283,13 +366,50 @@ export default function Inbox() {
                   </div>
                 </div>
               ))}
-
               <div ref={bottomRef} />
             </div>
+
+            {/* Image preview strip */}
+            {imagePreview && (
+              <div className="bg-white border-t border-gray-100 px-4 pt-2 pb-1 flex items-center gap-3 shrink-0">
+                <div className="relative">
+                  <img src={imagePreview} alt="Preview" className="h-16 rounded-lg object-cover" />
+                  {uploadingImg && (
+                    <div className="absolute inset-0 bg-white/60 flex items-center justify-center rounded-lg">
+                      <span className="text-xs text-gray-500">Uploading…</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={clearImage}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-700 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-500 transition-colors"
+                  >
+                    ×
+                  </button>
+                </div>
+                <span className="text-xs text-gray-400">{imageFile?.name}</span>
+              </div>
+            )}
 
             {/* Compose bar */}
             <div className="bg-white border-t border-gray-200 px-4 py-3 shrink-0">
               <div className="flex items-end gap-2 bg-gray-50 rounded-2xl border border-gray-200 px-3 py-2 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
+                {/* Image attach button */}
+                <button
+                  type="button"
+                  onClick={() => imgInputRef.current?.click()}
+                  className="p-1.5 text-gray-400 hover:text-indigo-500 transition-colors shrink-0 mb-0.5"
+                  title="Attach image"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                </button>
+                <input
+                  ref={imgInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImagePick(f) }}
+                />
+
                 <textarea
                   ref={textareaRef}
                   value={draft}
@@ -304,21 +424,18 @@ export default function Inbox() {
                       handleSend()
                     }
                   }}
-                  placeholder="Type a message… (Enter to send)"
+                  placeholder={imagePreview ? 'Add a caption…' : 'Type a message… (Enter to send)'}
                   rows={1}
-                  className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 focus:outline-none py-0.5 max-h-[120px]"
+                  className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 focus:outline-none py-0.5 max-h-30"
                   style={{ height: '22px' }}
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!draft.trim() || sendMutation.isPending}
+                  disabled={(!draft.trim() && !pendingImageUrl) || sendMutation.isPending || uploadingImg}
                   className="p-1.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 mb-0.5"
                   title="Send"
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
+                  <SendHorizonal className="w-4 h-4" />
                 </button>
               </div>
             </div>

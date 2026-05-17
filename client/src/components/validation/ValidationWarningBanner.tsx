@@ -1,3 +1,5 @@
+import { AlertTriangle, CircleX } from 'lucide-react'
+
 interface Props {
   warnings: string[]
   warningCount: number
@@ -8,7 +10,7 @@ export default function ValidationWarningBanner({ warnings, warningCount }: Prop
 
   const isSecond = warningCount >= 2
   const bg = isSecond ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
-  const icon = isSecond ? '🚫' : '⚠️'
+  const Icon = isSecond ? CircleX : AlertTriangle
   const heading = isSecond
     ? 'Please fix the issues below before saving'
     : 'Your profile has authenticity issues — please review'
@@ -16,7 +18,7 @@ export default function ValidationWarningBanner({ warnings, warningCount }: Prop
   return (
     <div className={`rounded-xl border px-4 py-3 mb-4 ${bg}`}>
       <p className={`text-sm font-semibold mb-1 ${isSecond ? 'text-red-700' : 'text-amber-700'}`}>
-        {icon} {heading}
+        <Icon className="inline-block h-4 w-4 mr-1 -mt-0.5" /> {heading}
       </p>
       <ul className={`text-sm space-y-0.5 list-disc list-inside ${isSecond ? 'text-red-600' : 'text-amber-600'}`}>
         {warnings.map((w, i) => (

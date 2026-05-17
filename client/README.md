@@ -1,73 +1,84 @@
-# React + TypeScript + Vite
+# HireCred — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Last updated: 2026-05-18**
 
-Currently, two official plugins are available:
+React 18 + TypeScript + Vite + TailwindCSS v4 frontend for the HireCred trust platform.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Tool | Purpose |
+|------|---------|
+| React 18 | UI framework |
+| TypeScript | Type safety |
+| Vite | Dev server + bundler |
+| TailwindCSS v4 | Styling |
+| Zustand | Auth state (`authStore`) |
+| TanStack Query | Server state, caching, polling |
+| Axios | HTTP client with JWT interceptor |
+| lucide-react | All icons (no inline SVGs) |
+| react-hot-toast | Toast notifications |
+| react-router-dom v6 | Routing |
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Pages
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+| Route | File | Access |
+|-------|------|--------|
+| `/login` | `Login.tsx` | Public |
+| `/register` | `Register.tsx` | Public |
+| `/dashboard` | `Dashboard.tsx` | Auth |
+| `/profile/edit` | `ProfileEditor.tsx` | Candidate only |
+| `/profile/:userId` | `ProfileView.tsx` | Public |
+| `/search` | `SearchPage.tsx` | Client only |
+| `/leaderboard` | `Leaderboard.tsx` | Public |
+| `/inbox` | `Inbox.tsx` | Auth |
+| `/inbox/:userId` | `Inbox.tsx` | Auth |
+| `/admin/login` | `AdminLogin.tsx` | Public |
+| `/admin` | `AdminPanel.tsx` | Admin only |
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+---
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Key Components
+
+| Component | Purpose |
+|-----------|---------|
+| `ScoreWidget` | HireCred score ring + refresh button + strengths/risks/flags |
+| `SkillsTagInput` | Tag-style skill input (no validation warnings) |
+| `ValidationWarningBanner` | Non-blocking profile save warnings |
+| `AppreciationModal` | Client appreciation submission |
+| `AppreciationSection` | Appreciation list with fraud-risk context |
+
+---
+
+## Dev Commands
+
+```bash
+npm install       # install dependencies
+npm run dev       # start dev server (http://localhost:5173)
+npm run build     # production build
+npm run preview   # preview production build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Environment
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Optional: create `client/.env` to override the API base URL:
+```env
+VITE_API_URL=http://localhost:8000
 ```
+
+Default: `http://localhost:8000` (hardcoded in `src/lib/api.ts`).
+
+---
+
+## Design Notes
+
+- All icons use **lucide-react** — no raw SVG tags in JSX
+- Password inputs suppress browser native eye toggle via CSS (`::-ms-reveal`, `::-webkit-credentials-auto-fill-button`)
+- Score polling: `refetchInterval: 3000` until score appears, then stops
+- Background scoring: all saves show "Score updating in background…" toast; score appears automatically
+- Portfolio "tech_stack" field is labelled "Skills" in both editor and profile view

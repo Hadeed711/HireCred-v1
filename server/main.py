@@ -3,10 +3,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.routers import auth, profile, proof_signals, appreciation, search, leaderboard, messages
+from src.routers import validate
+from src.routers.reports import reports_router, admin_router
 
 UPLOADS_DIR = Path(__file__).parent / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 (UPLOADS_DIR / "cv").mkdir(exist_ok=True)
+(UPLOADS_DIR / "messages").mkdir(exist_ok=True)
 
 app = FastAPI(title="HireCred API", version="1.0.0")
 
@@ -27,6 +30,9 @@ app.include_router(appreciation.router)
 app.include_router(search.router)
 app.include_router(leaderboard.router)
 app.include_router(messages.router)
+app.include_router(validate.router)
+app.include_router(reports_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")

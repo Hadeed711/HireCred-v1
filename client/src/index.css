@@ -10,6 +10,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Hide browser-native password reveal button (Edge/Chrome) to avoid duplicate with our custom toggle */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+input[type="password"]::-webkit-credentials-auto-fill-button {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 @layer components {
   .input {
     @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white;

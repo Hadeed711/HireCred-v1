@@ -1,9 +1,10 @@
 import uuid
+import asyncio
 import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -25,7 +26,7 @@ UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
 CV_DIR = UPLOADS_DIR / "cv"
 CV_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_CV_MIME = {"application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+ALLOWED_CV_MIME = {"application/pdf"}
 MAX_CV_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
@@ -99,6 +100,11 @@ async def get_score(user_ref: str, db: AsyncSession = Depends(get_db)):
         risks=score.risks or [],
         fraud_risk=score.fraud_risk.value,
         computed_at=score.computed_at,
+        is_suspicious=score.is_suspicious,
+        authenticity_flags=score.authenticity_flags or [],
+        cv_match_score=score.cv_match_score,
+        cv_match_warnings=score.cv_match_warnings or [],
+        url_warnings=score.url_warnings or [],
     )
 
 
@@ -128,7 +134,6 @@ async def get_profile(
 async def update_profile(
     user_id: uuid.UUID,
     body: ProfileUpdate,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -139,18 +144,13 @@ async def update_profile(
 
     update_data = body.model_dump(exclude_unset=True)
 
-    # Run authenticity validation before saving
+    # Validate but NEVER block — collect warnings for the response
     validation_input = {
         "bio": update_data.get("bio") or profile.bio or "",
         "experience": update_data.get("experience") or profile.experience or [],
         "portfolio": update_data.get("portfolio") or profile.portfolio or [],
     }
-    errors = validate_full_profile(validation_input)
-    if errors:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=errors[0].message,
-        )
+    validation_warnings = [e.message for e in validate_full_profile(validation_input)]
 
     for field, value in update_data.items():
         setattr(profile, field, value)
@@ -164,15 +164,22 @@ async def update_profile(
     )
     profile = result.scalar_one()
 
-    background_tasks.add_task(compute_and_save_score, user_id)
+    asyncio.create_task(compute_and_save_score(user_id))
 
-    return _build_profile_response(profile)
+    response = _build_profile_response(profile)
+    # Attach warnings as a non-blocking header so the frontend can display them
+    from fastapi.responses import JSONResponse
+    import json as _json
+    if validation_warnings:
+        resp_data = response.model_dump()
+        resp_data["_warnings"] = validation_warnings
+        return JSONResponse(content=resp_data)
+    return response
 
 
 @router.post("/{user_id}/cv")
 async def upload_cv(
     user_id: uuid.UUID,
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -186,7 +193,7 @@ async def upload_cv(
     if file.content_type not in ALLOWED_CV_MIME:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only PDF and DOCX files are accepted for CV upload.",
+            detail="Only PDF files are accepted for CV upload.",
         )
 
     data = await file.read()
@@ -217,7 +224,7 @@ async def upload_cv(
     profile.cv_analysis = None
     await db.commit()
 
-    background_tasks.add_task(compute_and_save_score, user_id)
+    asyncio.create_task(compute_and_save_score(user_id))
 
     return {
         "cv_url": f"/uploads/cv/{filename}",
@@ -228,7 +235,6 @@ async def upload_cv(
 @router.delete("/{user_id}/cv", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_cv(
     user_id: uuid.UUID,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -247,4 +253,17 @@ async def delete_cv(
     profile.cv_analysis = None
     await db.commit()
 
-    background_tasks.add_task(compute_and_save_score, user_id)
+    asyncio.create_task(compute_and_save_score(user_id))
+
+
+@router.post("/{user_id}/rescore", status_code=status.HTTP_202_ACCEPTED)
+async def rescore_profile(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Manually trigger credibility score recomputation for the authenticated user."""
+    if current_user.id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot rescore another user's profile")
+    asyncio.create_task(compute_and_save_score(user_id))
+    return {"message": "Score recomputation started."}

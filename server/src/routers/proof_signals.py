@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 import os
 import shutil
 from pathlib import Path
@@ -14,6 +15,7 @@ from src.models.profile import Profile
 from src.models.proof_signal import ProofSignal, SignalType
 from src.schemas.profile import ProofSignalCreate, ProofSignalResponse
 from src.middleware.auth import get_current_user
+from src.services.credibility_service import compute_and_save_score
 from src.services.validation_service import validate_url, validate_image_content
 
 router = APIRouter(prefix="/api/profile", tags=["proof-signals"])
@@ -59,6 +61,7 @@ async def add_proof_signal(
     db.add(signal)
     await db.commit()
     await db.refresh(signal)
+    asyncio.create_task(compute_and_save_score(user_id))
     return signal
 
 
@@ -84,6 +87,7 @@ async def delete_proof_signal(
 
     await db.delete(signal)
     await db.commit()
+    asyncio.create_task(compute_and_save_score(user_id))
 
 
 @router.post("/{user_id}/signals/upload", response_model=ProofSignalResponse, status_code=status.HTTP_201_CREATED)
@@ -125,4 +129,5 @@ async def upload_screenshot_signal(
     db.add(signal)
     await db.commit()
     await db.refresh(signal)
+    asyncio.create_task(compute_and_save_score(user_id))
     return signal

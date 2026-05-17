@@ -3,7 +3,9 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { queryClient } from './lib/queryClient'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminRoute from './components/AdminRoute'
 import Login from './pages/Login'
+import AdminLogin from './pages/AdminLogin'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import ProfileEditor from './pages/ProfileEditor'
@@ -11,6 +13,7 @@ import ProfileView from './pages/ProfileView'
 import SearchPage from './pages/SearchPage'
 import Leaderboard from './pages/Leaderboard'
 import Inbox from './pages/Inbox'
+import AdminPanel from './pages/AdminPanel'
 
 export default function App() {
   return (
@@ -19,6 +22,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/register" element={<Register />} />
           <Route path="/profile/:userId" element={<ProfileView />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
@@ -29,6 +33,10 @@ export default function App() {
             <Route path="/search" element={<SearchPage />} />
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/inbox/:userId" element={<Inbox />} />
+          </Route>
+
+          <Route element={<AdminRoute />}>
+            <Route path="/admin" element={<AdminPanel />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

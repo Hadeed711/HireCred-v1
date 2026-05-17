@@ -54,6 +54,11 @@ export interface CredibilityScore {
   risks: string[]
   fraud_risk: 'low' | 'medium' | 'high'
   computed_at: string
+  is_suspicious: boolean
+  authenticity_flags: string[]
+  cv_match_score: number | null
+  cv_match_warnings: string[]
+  url_warnings: string[]
 }
 
 export interface CvAnalysis {
@@ -61,6 +66,7 @@ export interface CvAnalysis {
   experience_summary: string
   is_authentic: boolean
   rejection_reason: string
+  cv_title?: string
 }
 
 export interface Profile {
@@ -83,4 +89,41 @@ export interface Profile {
   owner_email: string
   owner_role: string
   owner_uid: number | null
+}
+
+export type ReportReason =
+  | 'fake_account'
+  | 'impersonation'
+  | 'fake_credentials'
+  | 'inappropriate_content'
+  | 'spam'
+  | 'other'
+
+export type ReportStatus = 'pending' | 'approved' | 'rejected' | 'reconsidered'
+
+export interface AccountReport {
+  id: string
+  reporter_id: string
+  reported_user_id: string
+  reason: ReportReason
+  evidence_text: string | null
+  status: ReportStatus
+  admin_note: string | null
+  created_at: string
+  resolved_at: string | null
+  reporter_name: string | null
+  reported_user_name: string | null
+}
+
+export interface AdminUser {
+  id: string
+  uid: number | null
+  email: string
+  full_name: string
+  role: string
+  is_active: boolean
+  is_admin: boolean
+  is_suspicious: boolean
+  score: number | null
+  created_at: string
 }

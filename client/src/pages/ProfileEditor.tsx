@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -18,7 +18,42 @@ import {
   validateProfileForSave,
 } from '../lib/validators'
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── URL reachability hook ─────────────────────────────────────────────────────
+
+type UrlState = 'idle' | 'checking' | 'ok' | 'warn'
+
+function useUrlCheck(): [UrlState, string | null, (url: string) => void] {
+  const [state, setState] = useState<UrlState>('idle')
+  const [note, setNote] = useState<string | null>(null)
+
+  const check = useCallback(async (url: string) => {
+    if (!url || validateUrl(url)) return  // format error already shown
+    setState('checking')
+    try {
+      const res = await api.post('/validate/url', { url })
+      if (res.data.reachable) {
+        setState('ok')
+        setNote(null)
+      } else {
+        setState('warn')
+        setNote(res.data.note ?? 'URL appears unreachable')
+      }
+    } catch {
+      setState('idle')
+    }
+  }, [])
+
+  return [state, note, check]
+}
+
+function UrlStatusIcon({ state }: { state: UrlState }) {
+  if (state === 'checking') return <span className="text-gray-400 text-xs animate-pulse">Checking…</span>
+  if (state === 'ok') return <span className="text-emerald-600 text-xs">✓ Live</span>
+  if (state === 'warn') return <span className="text-amber-600 text-xs">⚠ Not reachable</span>
+  return null
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 const SIGNAL_LABELS: Record<SignalType, string> = {
   github: 'GitHub / Project Link',
@@ -148,6 +183,7 @@ function PortfolioForm({
   const urlErr = item.url ? validateUrl(item.url) : null
   const dupErr = item.url ? findDuplicatePortfolioUrl(allItems, index) : null
   const hasErr = urlErr || dupErr
+  const [urlState, urlNote, checkUrl] = useUrlCheck()
 
   return (
     <div className={`border rounded-xl p-4 space-y-3 bg-gray-50 ${hasErr ? 'border-red-300' : 'border-gray-200'}`}>
@@ -157,15 +193,22 @@ function PortfolioForm({
           <input className="input" value={item.title} onChange={field('title')} placeholder="e.g. E-commerce App" />
         </div>
         <div>
-          <label className="label">URL</label>
+          <div className="flex items-center justify-between mb-0.5">
+            <label className="label mb-0">URL</label>
+            <UrlStatusIcon state={urlState} />
+          </div>
           <input
             className={`input ${hasErr ? 'border-red-300 focus:ring-red-300' : ''}`}
             value={item.url}
             onChange={field('url')}
+            onBlur={() => item.url && !urlErr && checkUrl(item.url)}
             placeholder="https://..."
           />
           {urlErr && <p className="text-xs text-red-600 mt-1">{urlErr}</p>}
           {dupErr && <p className="text-xs text-red-600 mt-1">{dupErr}</p>}
+          {!urlErr && urlState === 'warn' && urlNote && (
+            <p className="text-xs text-amber-600 mt-1">⚠ {urlNote}</p>
+          )}
         </div>
       </div>
       <div>
@@ -179,7 +222,7 @@ function PortfolioForm({
         />
       </div>
       <div>
-        <label className="label">Tech Stack</label>
+        <label className="label">Skills</label>
         <SkillsTagInput
           skills={item.tech_stack}
           onChange={(tags) => onChange({ ...item, tech_stack: tags })}
@@ -218,6 +261,10 @@ export default function ProfileEditor() {
   // validation state
   const [warningCount, setWarningCount] = useState(0)
   const [activeWarnings, setActiveWarnings] = useState<string[]>([])
+  const [consistencyWarn, setConsistencyWarn] = useState<string | null>(null)
+
+  // URL check for proof signal link
+  const [signalUrlState, signalUrlNote, checkSignalUrl] = useUrlCheck()
 
   // proof signal state
   const [signalType, setSignalType] = useState<SignalType>('github')
@@ -247,12 +294,25 @@ export default function ProfileEditor() {
     }
   }, [profile])
 
+  // Title vs skills consistency — debounced check
+  useEffect(() => {
+    if (!title || skills.length < 2) { setConsistencyWarn(null); return }
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.post('/validate/consistency', { title, skills })
+        setConsistencyWarn(res.data.consistent ? null : res.data.warning)
+      } catch { /* ignore */ }
+    }, 800)
+    return () => clearTimeout(t)
+  }, [title, skills])
+
   const saveMutation = useMutation({
     mutationFn: (data: object) => api.put(`/profile/${user?.id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profile', user?.id] })
+      qc.invalidateQueries({ queryKey: ['score', user?.uid ?? user?.id] })
       setActiveWarnings([])
-      toast.success('Profile saved!')
+      toast.success('Profile saved! Score updating in background…')
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -271,6 +331,7 @@ export default function ProfileEditor() {
     mutationFn: (signalId: string) => api.delete(`/profile/${user?.id}/signals/${signalId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profile', user?.id] })
+      qc.invalidateQueries({ queryKey: ['score', user?.uid ?? user?.id] })
       toast.success('Signal removed')
     },
     onError: () => toast.error('Failed to remove signal'),
@@ -324,7 +385,8 @@ export default function ProfileEditor() {
         })
       }
       qc.invalidateQueries({ queryKey: ['profile', user?.id] })
-      toast.success('Proof signal added!')
+      qc.invalidateQueries({ queryKey: ['score', user?.uid ?? user?.id] })
+      toast.success('Proof signal added! Score updating in background…')
       setSignalTitle(''); setSignalUrl(''); setSignalDesc(''); setSignalFile(null)
       if (fileRef.current) fileRef.current.value = ''
     } catch (err: unknown) {
@@ -339,6 +401,7 @@ export default function ProfileEditor() {
     try {
       await api.delete(`/profile/${user?.id}/cv`)
       qc.invalidateQueries({ queryKey: ['profile', user?.id] })
+      qc.invalidateQueries({ queryKey: ['score', user?.uid ?? user?.id] })
       toast.success('CV removed')
     } catch {
       toast.error('Failed to remove CV')
@@ -355,9 +418,10 @@ export default function ProfileEditor() {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       qc.invalidateQueries({ queryKey: ['profile', user?.id] })
+      qc.invalidateQueries({ queryKey: ['score', user?.uid ?? user?.id] })
       setCvFile(null)
       if (cvRef.current) cvRef.current.value = ''
-      toast.success('CV uploaded and analyzed!')
+      toast.success('CV uploaded! Score updating in background…')
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       const newCount = warningCount + 1
@@ -408,7 +472,7 @@ export default function ProfileEditor() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => navigate(`/profile/${user?.uid ?? user?.id}`)}
+            onClick={() => navigate(`/profile/${user?.uid ?? user?.id}`, { state: { from: '/profile/edit' } })}
             className="text-sm px-3 py-1.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-600"
           >
             Preview
@@ -444,6 +508,9 @@ export default function ProfileEditor() {
               <div>
                 <label className="label">Professional Title</label>
                 <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Full-Stack Developer" />
+                {consistencyWarn && (
+                  <p className="text-xs text-amber-600 mt-1">⚠ {consistencyWarn}</p>
+                )}
               </div>
               <div>
                 <label className="label">Location</label>
@@ -658,15 +725,22 @@ export default function ProfileEditor() {
               </div>
             ) : (
               <div>
-                <label className="label">URL</label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="label mb-0">URL</label>
+                  <UrlStatusIcon state={signalUrlState} />
+                </div>
                 <input
                   className={`input ${signalUrl && validateUrl(signalUrl) ? 'border-red-300' : ''}`}
                   value={signalUrl}
                   onChange={(e) => setSignalUrl(e.target.value)}
+                  onBlur={() => signalUrl && !validateUrl(signalUrl) && checkSignalUrl(signalUrl)}
                   placeholder="https://..."
                 />
                 {signalUrl && validateUrl(signalUrl) && (
                   <p className="text-xs text-red-600 mt-1">{validateUrl(signalUrl)}</p>
+                )}
+                {!validateUrl(signalUrl) && signalUrlState === 'warn' && signalUrlNote && (
+                  <p className="text-xs text-amber-600 mt-1">⚠ {signalUrlNote}</p>
                 )}
               </div>
             )}

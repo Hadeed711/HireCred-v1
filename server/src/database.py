@@ -22,7 +22,13 @@ def _make_async_url(url: str) -> tuple[str, dict]:
 
 
 _db_url, _connect_args = _make_async_url(settings.database_url)
-engine = create_async_engine(_db_url, connect_args=_connect_args, echo=False)
+engine = create_async_engine(
+    _db_url,
+    connect_args=_connect_args,
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 

@@ -1,3 +1,5 @@
+import asyncio
+import re
 import uuid
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +13,65 @@ from src.ai.search_prompt import parse_search_query
 
 logger = logging.getLogger(__name__)
 
+_PROFESSION_ALIASES: dict[str, list[str]] = {
+    'frontend': [
+        'frontend', 'front end', 'front-end', 'frontend engineer', 'frontend developer',
+        'ui engineer', 'ui developer', 'ui/ux', 'ui ux', 'react developer', 'web developer',
+    ],
+    'backend': [
+        'backend', 'back end', 'back-end', 'backend engineer', 'backend developer',
+        'api developer', 'server engineer', 'server developer',
+    ],
+    'full stack': [
+        'full stack', 'full-stack', 'fullstack', 'full stack developer', 'full stack engineer',
+    ],
+    'designer': [
+        'designer', 'ui ux designer', 'ui/ux designer', 'product designer', 'ux designer',
+        'visual designer', 'graphic designer',
+    ],
+    'electrician': ['electrician', 'electrical technician', 'electrical engineer'],
+    'plumber': ['plumber', 'plumbing technician', 'pipe fitter'],
+    'doctor': ['doctor', 'physician', 'medical doctor'],
+    'lawyer': ['lawyer', 'attorney', 'advocate'],
+    'nurse': ['nurse', 'registered nurse'],
+    'teacher': ['teacher', 'educator', 'tutor'],
+    'accountant': ['accountant', 'bookkeeper', 'auditor'],
+    'architect': ['architect', 'architectural designer'],
+    'pilot': ['pilot', 'aviator'],
+    'psychologist': ['psychologist', 'therapist', 'counsellor', 'counselor'],
+    'pharmacist': ['pharmacist'],
+    'developer': ['developer', 'software developer', 'software engineer', 'programmer'],
+    'engineer': ['engineer', 'software engineer', 'systems engineer'],
+}
+
+_PROFESSION_EXPANSIONS: dict[str, list[str]] = {
+    'frontend': ['react', 'react.js', 'next.js', 'javascript', 'typescript', 'html', 'css', 'tailwind', 'vue', 'angular', 'web'],
+    'backend': ['api', 'node', 'node.js', 'python', 'django', 'flask', 'java', 'go', 'postgres', 'database', 'server'],
+    'full stack': ['frontend', 'backend', 'web', 'api', 'javascript', 'typescript', 'react', 'node'],
+    'designer': ['figma', 'wireframe', 'prototype', 'ui', 'ux', 'branding', 'visual'],
+    'electrician': ['electrical', 'wiring', 'circuits', 'installation', 'maintenance', 'repair', 'power'],
+    'plumber': ['pipes', 'pipe', 'fixtures', 'drain', 'water', 'installation', 'maintenance'],
+    'doctor': ['clinical', 'medical', 'patient', 'health', 'hospital'],
+    'lawyer': ['legal', 'law', 'court', 'contract', 'compliance'],
+    'nurse': ['clinical', 'patient', 'hospital', 'care'],
+    'teacher': ['education', 'classroom', 'curriculum', 'lesson'],
+    'accountant': ['tax', 'audit', 'bookkeeping', 'finance', 'reporting'],
+    'architect': ['building', 'design', 'construction', 'blueprint'],
+    'pilot': ['aviation', 'flight', 'aircraft', 'navigation'],
+    'psychologist': ['therapy', 'mental health', 'assessment', 'behaviour'],
+    'pharmacist': ['pharmacy', 'medication', 'prescription'],
+    'developer': ['coding', 'software', 'web', 'app', 'programming'],
+    'engineer': ['system', 'technical', 'code', 'software', 'development'],
+}
+
+_KNOWN_SKILLS = {
+    'react', 'react.js', 'next.js', 'vue', 'angular', 'svelte', 'typescript', 'javascript',
+    'python', 'node', 'node.js', 'express', 'django', 'flask', 'java', 'go', 'php', 'laravel',
+    'ruby', 'rails', 'html', 'css', 'tailwind', 'sass', 'postgres', 'postgresql', 'mysql',
+    'mongodb', 'redis', 'graphql', 'rest', 'api', 'docker', 'kubernetes', 'aws', 'gcp', 'azure',
+    'figma', 'ui', 'ux', 'ui/ux', 'machine learning', 'data science', 'devops', 'cloud', 'sql',
+}
+
 _STOP_WORDS = {
     'a','an','the','for','with','who','is','are','and','or','but','in','on','at','to','of',
     'looking','need','want','hire','find','someone','i','we','our','my','good','great',
@@ -18,10 +79,38 @@ _STOP_WORDS = {
     'get','got','any','some','this','that','these','those',
 }
 
+_SEARCH_FILLER_WORDS = {
+    'reliable', 'trusted', 'trust', 'trustworthy', 'experienced', 'senior', 'expert',
+    'honest', 'professional', 'certified', 'proven', 'deadline', 'deadlines', 'deadline-driven',
+    'urgent', 'quick', 'fast', 'best', 'top', 'quality', 'great', 'strong', 'good',
+}
 
-def _simple_parse_fallback(query: str) -> dict:
-    words = [w.strip('.,!?()') for w in query.lower().split()]
-    text = query.lower()
+
+def _normalize_query(query: str) -> str:
+    return re.sub(r'\s+', ' ', query.lower()).strip()
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    return list(dict.fromkeys(item for item in items if item))
+
+
+def _collect_profession_terms(text: str) -> tuple[list[str], list[str]]:
+    profession_keywords: list[str] = []
+    matched_categories: list[str] = []
+
+    for category, aliases in _PROFESSION_ALIASES.items():
+        if any(alias in text for alias in aliases):
+            matched_categories.append(category)
+            profession_keywords.extend(aliases)
+
+    if any(category not in {'developer', 'engineer'} for category in matched_categories):
+        profession_keywords = [kw for kw in profession_keywords if kw not in _PROFESSION_ALIASES['developer'] and kw not in _PROFESSION_ALIASES['engineer']]
+
+    return _dedupe(profession_keywords), matched_categories
+
+
+def _collect_skill_terms(text: str) -> list[str]:
+    words = [w.strip('.,!?()') for w in text.split()]
     phrases = []
     for phrase in ['full stack', 'full-stack', 'machine learning', 'data science',
                    'ui ux', 'ui/ux', 'mobile app', 'web development', 'back end',
@@ -29,8 +118,56 @@ def _simple_parse_fallback(query: str) -> dict:
         if phrase.replace('-', ' ') in text or phrase in text:
             phrases.append(phrase.replace('-', ' '))
 
-    single_words = [w for w in words if w not in _STOP_WORDS and len(w) > 2]
+    single_words = [w for w in words if w not in _STOP_WORDS and w not in _SEARCH_FILLER_WORDS and len(w) > 2]
     skills = phrases + [w for w in single_words if w not in ' '.join(phrases)]
+
+    normalized = _dedupe([s for s in skills if s in _KNOWN_SKILLS or ' ' in s])
+    if normalized:
+        return normalized[:10]
+
+    return _dedupe(skills)[:8]
+
+
+def _all_profession_aliases() -> set[str]:
+    aliases: set[str] = set()
+    for items in _PROFESSION_ALIASES.values():
+        aliases.update(items)
+    return aliases
+
+
+def _expand_profession_terms(profession_keywords: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for category, aliases in _PROFESSION_ALIASES.items():
+        if any(alias in profession_keywords for alias in aliases):
+            expanded.extend(_PROFESSION_EXPANSIONS.get(category, []))
+    return _dedupe(expanded)
+
+
+def _profile_text(profile: Profile) -> str:
+    return " ".join([
+        (profile.title or '').lower(),
+        (profile.bio or '').lower(),
+        ' '.join(s.lower() for s in (profile.skills or [])),
+        ' '.join(
+            f"{e.get('title','')} {e.get('company','')} {e.get('description','')}".lower()
+            for e in (profile.experience or [])
+        ),
+    ])
+
+
+def _profile_matches_terms(profile: Profile, terms: list[str]) -> bool:
+    text = _profile_text(profile)
+    return any(term in text for term in terms if term)
+
+
+def _simple_parse_fallback(query: str) -> dict:
+    text = _normalize_query(query)
+    words = [w.strip('.,!?()') for w in text.split()]
+    profession_keywords, matched_categories = _collect_profession_terms(text)
+    skills = _collect_skill_terms(text)
+    if profession_keywords:
+        profession_aliases = _all_profession_aliases()
+        skills = [s for s in skills if s not in profession_aliases]
 
     trust_words = [w for w in words if w in {
         'reliable', 'trusted', 'verified', 'experienced', 'senior', 'expert',
@@ -51,15 +188,48 @@ def _simple_parse_fallback(query: str) -> dict:
     elif any(p in text for p in ['moderate credibility', 'average trust', 'medium trust']):
         min_score = 40
 
+    search_tier = 'profession' if profession_keywords else 'skill'
+    if not profession_keywords and not skills:
+        search_tier = 'domain'
+
     return {
-        "search_tier": "skill",
-        "profession_keywords": [],
-        "required_skills": skills[:8],
+        "search_tier": search_tier,
+        "profession_keywords": profession_keywords,
+        "required_skills": skills,
         "trust_keywords": trust_words,
         "trust_priority": bool(trust_words),
         "experience_level": exp_level,
         "min_credibility_score": min_score,
     }
+
+
+async def _parse_search_intent(query: str) -> dict:
+    local = _simple_parse_fallback(query)
+    if local.get('search_tier') == 'profession' or local.get('required_skills'):
+        return local
+
+    try:
+        parsed = await asyncio.wait_for(parse_search_query(query), timeout=3.5)
+    except Exception:
+        return local
+
+    parsed['required_skills'] = _dedupe([s.lower().strip() for s in parsed.get('required_skills', [])])
+    parsed['profession_keywords'] = _dedupe([p.lower().strip() for p in parsed.get('profession_keywords', [])])
+    parsed.setdefault('search_tier', local.get('search_tier', 'skill'))
+    parsed.setdefault('trust_keywords', [])
+    parsed.setdefault('trust_priority', False)
+    parsed.setdefault('experience_level', None)
+    parsed.setdefault('min_credibility_score', 0)
+
+    if not parsed.get('profession_keywords') and local.get('profession_keywords'):
+        parsed['profession_keywords'] = local['profession_keywords']
+    if not parsed.get('required_skills') and local.get('required_skills'):
+        parsed['required_skills'] = local['required_skills']
+    if local.get('search_tier') == 'profession':
+        parsed['search_tier'] = 'profession'
+    elif local.get('search_tier') == 'domain' and not parsed.get('profession_keywords') and not parsed.get('required_skills'):
+        parsed['search_tier'] = 'domain'
+    return parsed
 
 
 def _profession_match(profile: Profile, profession_keywords: list[str]) -> bool:
@@ -126,17 +296,15 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
     """Three-tier search: profession exact → skill semantic → domain fallback."""
 
     # Step 1: Parse intent
-    try:
-        parsed = await parse_search_query(query)
-    except Exception:
-        logger.warning("AI search parsing failed, using keyword fallback")
-        parsed = _simple_parse_fallback(query)
+    parsed = await _parse_search_intent(query)
 
     search_tier: str = parsed.get("search_tier", "skill")
     profession_keywords: list[str] = parsed.get("profession_keywords", [])
     required_skills: list[str] = parsed.get("required_skills", [])
     trust_priority: bool = parsed.get("trust_priority", False)
     min_cred: int = int(parsed.get("min_credibility_score", 0))
+    profession_terms = _dedupe(profession_keywords + _expand_profession_terms(profession_keywords))
+    query_terms = _dedupe(required_skills + profession_terms)
 
     # Step 2: Load all candidates
     stmt = (
@@ -162,10 +330,15 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
 
     # Tier 1 — exact profession match
     if search_tier == "profession" and profession_keywords:
-        filtered = [r for r in rows if _profession_match(r.Profile, profession_keywords)]
-        if not filtered:
-            # Fall through to Tier 2
-            tier_used = "skill"
+        exact_matches = [r for r in rows if _profession_title_exact(r.Profile, profession_keywords)]
+        if exact_matches:
+            filtered = exact_matches
+            tier_used = "profession"
+        else:
+            related_matches = [r for r in rows if _profile_matches_terms(r.Profile, query_terms)]
+            if related_matches:
+                filtered = related_matches
+                tier_used = "profession"
 
     # Tier 2 — skill overlap
     if not filtered:
@@ -183,7 +356,8 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
 
     # Tier 3 — domain semantic fallback (search all text)
     if not filtered:
-        filtered = [r for r in rows if _domain_match(r.Profile, query_lower)]
+        fallback_terms = query_terms or [token for token in query_lower.split() if token not in _STOP_WORDS]
+        filtered = [r for r in rows if _profile_matches_terms(r.Profile, fallback_terms)]
         tier_used = "domain"
 
     # Last resort: return all candidates
@@ -232,12 +406,17 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
             matched = _skill_overlap(candidate_skills, required_skills)
             skill_match_pct = len(matched) / len(required_skills)
         elif profession_keywords:
-            # For profession tier, treat matching keywords as 100%
-            skill_match_pct = 1.0 if _profession_match(profile, profession_keywords) else 0.5
+            exact_role = _profession_title_exact(profile, profession_keywords)
+            related_role = _profile_matches_terms(profile, query_terms)
+            # Keep role searches strict enough to rank the right profession first.
+            skill_match_pct = 1.0 if exact_role else (0.8 if related_role else 0.5)
         else:
             skill_match_pct = 1.0
 
-        profession_exact = 15.0 if (profession_keywords and _profession_title_exact(profile, profession_keywords)) else 0.0
+        if profession_keywords:
+            profession_exact = 35.0 if _profession_title_exact(profile, profession_keywords) else (15.0 if _profile_matches_terms(profile, query_terms) else 0.0)
+        else:
+            profession_exact = 0.0
 
         if trust_priority:
             cred_score_eff = cred_score * 1.2

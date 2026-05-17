@@ -51,6 +51,9 @@ export default function Dashboard() {
           )}
           <NavLink to="/leaderboard">Leaderboard</NavLink>
           <NavLink to="/inbox">Inbox</NavLink>
+          {user?.is_admin && (
+            <NavLink to="/admin">Admin</NavLink>
+          )}
           <span className="hidden sm:block text-sm text-gray-500 px-3 border-l border-gray-200 ml-1">{user?.full_name}</span>
           <button
             onClick={logout}
@@ -174,7 +177,7 @@ export default function Dashboard() {
               <div className="flex flex-wrap gap-3">
                 <ActionButton to="/profile/edit" primary>Edit Profile</ActionButton>
                 {user?.uid != null && (
-                  <ActionButton to={`/profile/${user.uid}`}>View Public Profile</ActionButton>
+                  <ActionButton to={`/profile/${user.uid}`} state={{ from: '/dashboard' }}>View Public Profile</ActionButton>
                 )}
                 <ActionButton to="/leaderboard">Trust Leaderboard</ActionButton>
                 <ActionButton to="/inbox">Inbox</ActionButton>
@@ -251,10 +254,11 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   )
 }
 
-function ActionButton({ to, primary, children }: { to: string; primary?: boolean; children: React.ReactNode }) {
+function ActionButton({ to, state, primary, children }: { to: string; state?: unknown; primary?: boolean; children: React.ReactNode }) {
   return (
     <Link
       to={to}
+      state={state}
       className={`px-4 py-2 text-sm font-medium rounded-xl transition-all duration-150 ${
         primary
           ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200'
@@ -266,10 +270,11 @@ function ActionButton({ to, primary, children }: { to: string; primary?: boolean
   )
 }
 
-function ClientStatCard({ icon, label, value, hint, accent, to }: {
+function ClientStatCard({ icon, label, value, hint, accent, to, state }: {
   icon: string; label: string; value: string; hint: string
   accent: 'indigo' | 'violet' | 'emerald'
   to: string
+  state?: unknown
 }) {
   const colors = {
     indigo: 'bg-indigo-50 border-indigo-100 hover:border-indigo-200',
@@ -284,6 +289,7 @@ function ClientStatCard({ icon, label, value, hint, accent, to }: {
   return (
     <Link
       to={to}
+      state={state}
       className={`rounded-2xl border p-5 ${colors[accent]} hover:shadow-md transition-all block group`}
     >
       <div className="flex items-start justify-between mb-3">

@@ -91,3 +91,8 @@ class ScoreResponse(BaseModel):
     risks: list[str]
     fraud_risk: str
     computed_at: datetime
+    is_suspicious: bool = False
+    authenticity_flags: list[str] = []
+    cv_match_score: int | None = None
+    cv_match_warnings: list[str] = []
+    url_warnings: list[str] = []

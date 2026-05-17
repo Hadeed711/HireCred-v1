@@ -1,8 +1,14 @@
+import { useState } from 'react'
 import type { CredibilityScore } from '../../lib/types'
+import { Trophy, ShieldAlert, Link2, AlertTriangle, CheckCircle2, CircleX, RefreshCw } from 'lucide-react'
+import api from '../../lib/api'
+import toast from 'react-hot-toast'
 
 interface Props {
   score: CredibilityScore | null | undefined
   isLoading?: boolean
+  userId?: string
+  isOwn?: boolean
 }
 
 const SIZE = 128
@@ -36,18 +42,44 @@ function scoreSummary(score: number): string {
   return 'Profile is incomplete. Fill in experience, skills, and proof signals.'
 }
 
-export default function ScoreWidget({ score, isLoading }: Props) {
+export default function ScoreWidget({ score, isLoading, userId, isOwn }: Props) {
+  const [refreshing, setRefreshing] = useState(false)
+
+  async function handleRefresh() {
+    if (!userId || refreshing) return
+    setRefreshing(true)
+    try {
+      await api.post(`/profile/${userId}/rescore`)
+      toast.success('Score recomputation started — refreshing in a moment…')
+    } catch {
+      toast.error('Failed to trigger rescore')
+    } finally {
+      setTimeout(() => setRefreshing(false), 3000)
+    }
+  }
+
+  const refreshBtn = isOwn && userId ? (
+    <button
+      onClick={handleRefresh}
+      disabled={refreshing}
+      title="Recompute HireCred score"
+      className="ml-auto flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-700 disabled:opacity-40 transition-colors px-2 py-1 rounded-lg hover:bg-indigo-50"
+    >
+      <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+      {refreshing ? 'Refreshing…' : 'Refresh'}
+    </button>
+  ) : null
+
   if (isLoading) {
     return (
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          🏆 HireCred Score
+          <Trophy className="h-4.5 w-4.5 text-indigo-600" /> HireCred Score
           <span className="flex-1 h-px bg-gray-100 ml-1" />
         </h2>
         <div className="flex flex-col items-center gap-3 py-2">
           <div className="w-32 h-32 rounded-full border-12 border-gray-100 animate-pulse" />
-          <p className="text-sm text-gray-400 animate-pulse">Computing AI score…</p>
-          <p className="text-xs text-gray-300">This takes 5–10 seconds</p>
+          <p className="text-sm text-gray-400 animate-pulse">Computing score…</p>
         </div>
       </div>
     )
@@ -57,13 +89,14 @@ export default function ScoreWidget({ score, isLoading }: Props) {
     return (
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          🏆 HireCred Score
+          <Trophy className="h-4.5 w-4.5 text-indigo-600" /> HireCred Score
           <span className="flex-1 h-px bg-gray-100 ml-1" />
+          {refreshBtn}
         </h2>
         <div className="text-center py-4">
-          <p className="text-3xl mb-2">🤖</p>
+          <ShieldAlert className="mx-auto mb-2 h-8 w-8 text-indigo-500" />
           <p className="text-sm text-gray-500 font-medium">Score not yet computed</p>
-          <p className="text-xs text-gray-400 mt-1">Save your profile to trigger AI scoring.</p>
+          <p className="text-xs text-gray-400 mt-1">Save your profile or click Refresh to trigger scoring.</p>
         </div>
       </div>
     )
@@ -74,11 +107,23 @@ export default function ScoreWidget({ score, isLoading }: Props) {
   const color = scoreColor(score.score)
   const bgClass = scoreBgClass(score.score)
 
+  // Filter out empty/whitespace entries the LLM occasionally produces
+  const strengths = (score.strengths || []).filter((s) => s.trim())
+  const risks = (score.risks || []).filter((r) => r.trim())
+  const urlWarnings = (score.url_warnings || []).filter((w) => w.trim())
+  const authFlags = (score.authenticity_flags || []).filter((f) => f.trim())
+
   return (
     <div className={`rounded-2xl border p-6 bg-linear-to-br ${bgClass}`}>
-      <h2 className="text-base font-semibold text-gray-900 mb-5 flex items-center gap-2">
-        🏆 HireCred Score
+      <h2 className="text-base font-semibold text-gray-900 mb-2 flex items-center gap-2">
+        <Trophy className="h-4.5 w-4.5 text-indigo-600" /> HireCred Score
         <span className="flex-1 h-px bg-gray-200/60 ml-1" />
+        {score.is_suspicious && (
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 shrink-0">
+            <AlertTriangle className="inline-block h-3.5 w-3.5 mr-1 -mt-0.5" /> Suspicious
+          </span>
+        )}
+        {refreshBtn}
       </h2>
 
       <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
@@ -86,24 +131,11 @@ export default function ScoreWidget({ score, isLoading }: Props) {
         <div className="flex flex-col items-center gap-2 shrink-0">
           <div className="relative">
             <svg width={SIZE} height={SIZE} className="-rotate-90">
+              <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth={STROKE} />
               <circle
-                cx={SIZE / 2}
-                cy={SIZE / 2}
-                r={R}
-                fill="none"
-                stroke="rgba(0,0,0,0.06)"
-                strokeWidth={STROKE}
-              />
-              <circle
-                cx={SIZE / 2}
-                cy={SIZE / 2}
-                r={R}
-                fill="none"
-                stroke={color}
-                strokeWidth={STROKE}
-                strokeLinecap="round"
-                strokeDasharray={CIRCUMFERENCE}
-                strokeDashoffset={dashOffset}
+                cx={SIZE / 2} cy={SIZE / 2} r={R}
+                fill="none" stroke={color} strokeWidth={STROKE} strokeLinecap="round"
+                strokeDasharray={CIRCUMFERENCE} strokeDashoffset={dashOffset}
                 style={{ transition: 'stroke-dashoffset 1s ease' }}
               />
             </svg>
@@ -112,37 +144,59 @@ export default function ScoreWidget({ score, isLoading }: Props) {
               <span className="text-xs font-semibold" style={{ color }}>/100</span>
             </div>
           </div>
-          <div className="text-center">
-            <span className="text-sm font-bold" style={{ color }}>{scoreLabel(score.score)}</span>
-          </div>
+          <span className="text-sm font-bold" style={{ color }}>{scoreLabel(score.score)}</span>
         </div>
 
         {/* Details */}
         <div className="flex-1 space-y-4 w-full">
           <p className="text-xs text-gray-500 leading-relaxed">{scoreSummary(score.score)}</p>
 
-          {score.strengths.length > 0 && (
+          {strengths.length > 0 && (
             <div>
               <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-2">Strengths</p>
               <ul className="space-y-1.5">
-                {score.strengths.map((s, i) => (
+                {strengths.map((s, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                    <span className="text-emerald-500 mt-0.5 shrink-0 font-bold text-xs">✓</span>
-                    {s}
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" /> {s}
                   </li>
                 ))}
               </ul>
             </div>
           )}
 
-          {score.risks.length > 0 && (
+          {risks.length > 0 && (
             <div>
               <p className="text-xs font-bold text-red-600 uppercase tracking-widest mb-2">Risks</p>
               <ul className="space-y-1.5">
-                {score.risks.map((r, i) => (
+                {risks.map((r, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                    <span className="text-red-400 mt-0.5 shrink-0 font-bold text-xs">!</span>
-                    {r}
+                    <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-red-400" /> {r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {urlWarnings.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-2">Link Warnings</p>
+              <ul className="space-y-1.5">
+                {urlWarnings.map((w, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                    <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" /> {w}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {authFlags.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">Authenticity Flags</p>
+              <ul className="space-y-1.5">
+                {authFlags.map((f, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                    <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" /> {f}
                   </li>
                 ))}
               </ul>

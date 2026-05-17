@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { Trophy, Star, ShieldCheck, Sprout, ArrowLeft, AlertTriangle, Medal } from 'lucide-react'
 import api from '../lib/api'
 
 interface LeaderboardEntry {
@@ -16,16 +17,16 @@ interface LeaderboardEntry {
   insufficient_data: boolean
 }
 
-const RANK_META: Record<number, { ring: string; badge: string; emoji: string }> = {
-  1: { ring: 'ring-2 ring-yellow-300', badge: 'bg-yellow-400 text-yellow-900', emoji: '🥇' },
-  2: { ring: 'ring-2 ring-gray-300',   badge: 'bg-gray-300 text-gray-800',    emoji: '🥈' },
-  3: { ring: 'ring-2 ring-orange-300', badge: 'bg-orange-300 text-orange-900', emoji: '🥉' },
+const RANK_STYLE: Record<number, { ring: string; badge: string; label: string; color: string }> = {
+  1: { ring: 'ring-2 ring-yellow-300', badge: 'bg-yellow-400 text-yellow-900', label: '1st', color: 'text-yellow-600' },
+  2: { ring: 'ring-2 ring-gray-300',   badge: 'bg-gray-300 text-gray-800',    label: '2nd', color: 'text-gray-500' },
+  3: { ring: 'ring-2 ring-orange-300', badge: 'bg-orange-300 text-orange-900', label: '3rd', color: 'text-orange-500' },
 }
 
 function scoreColor(score: number) {
-  if (score >= 70) return { text: 'text-emerald-600', bg: 'bg-emerald-50' }
-  if (score >= 40) return { text: 'text-amber-500',   bg: 'bg-amber-50' }
-  return               { text: 'text-red-500',        bg: 'bg-red-50' }
+  if (score >= 70) return { text: 'text-emerald-600', bg: 'bg-emerald-50 border border-emerald-100' }
+  if (score >= 40) return { text: 'text-amber-500',   bg: 'bg-amber-50 border border-amber-100' }
+  return               { text: 'text-red-500',        bg: 'bg-red-50 border border-red-100' }
 }
 
 function SkeletonRow() {
@@ -61,10 +62,12 @@ export default function Leaderboard() {
           onClick={() => navigate(-1)}
           className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1.5 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition-colors"
         >
-          ← Back
+          <ArrowLeft className="h-4 w-4" /> Back
         </button>
         <div className="flex flex-col items-center">
-          <h1 className="text-base font-bold text-gray-900">Trust Leaderboard</h1>
+          <h1 className="text-base font-bold text-gray-900 flex items-center gap-1.5">
+            <Trophy className="h-4 w-4 text-indigo-600" /> Trust Leaderboard
+          </h1>
           <p className="text-xs text-gray-400">Refreshes every 2 min</p>
         </div>
         <div className="w-20" />
@@ -73,7 +76,9 @@ export default function Leaderboard() {
       <main className="max-w-2xl mx-auto px-4 py-8">
         {/* Hero banner */}
         <div className="bg-linear-to-r from-indigo-600 to-violet-600 text-white rounded-2xl p-6 mb-6 text-center shadow-lg">
-          <p className="text-4xl mb-2">🏆</p>
+          <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center mx-auto mb-3">
+            <Medal className="h-7 w-7 text-yellow-300" />
+          </div>
           <h2 className="text-xl font-bold mb-1">Top Trusted Professionals</h2>
           <p className="text-indigo-200 text-sm">
             Ranked by HireCred score · client appreciation · proof signals · activity
@@ -83,7 +88,7 @@ export default function Leaderboard() {
         {/* Insufficient data notice */}
         {insufficientData && (
           <div className="flex items-center gap-2 p-3 mb-5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-            <span>🌱</span>
+            <Sprout className="h-4 w-4 shrink-0" />
             <span>Not enough verified data yet — showing profiles sorted by trust completeness.</span>
           </div>
         )}
@@ -96,7 +101,9 @@ export default function Leaderboard() {
 
         {isError && (
           <div className="text-center py-16">
-            <p className="text-3xl mb-3">😕</p>
+            <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
+              <AlertTriangle className="h-7 w-7 text-gray-400" />
+            </div>
             <p className="text-gray-600 font-medium">Failed to load leaderboard</p>
             <p className="text-gray-400 text-sm mt-1">Try again later.</p>
           </div>
@@ -104,7 +111,9 @@ export default function Leaderboard() {
 
         {data && data.length === 0 && (
           <div className="text-center py-16">
-            <p className="text-4xl mb-3">🌱</p>
+            <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-3">
+              <Sprout className="h-7 w-7 text-indigo-400" />
+            </div>
             <p className="text-gray-600 font-medium">No qualified candidates yet</p>
             <p className="text-gray-400 text-sm mt-1 max-w-xs mx-auto">
               Candidates appear here after completing their profile and receiving at least one client appreciation.
@@ -115,22 +124,20 @@ export default function Leaderboard() {
         {qualifiedData && qualifiedData.length > 0 && (
           <div className="space-y-3">
             {qualifiedData.map((entry) => {
-              const meta = RANK_META[entry.rank]
+              const meta = RANK_STYLE[entry.rank]
               const colors = scoreColor(entry.credibility_score)
               return (
                 <button
                   key={entry.user_id}
-                  onClick={() => navigate(`/profile/${entry.uid ?? entry.user_id}`)}
+                  onClick={() => navigate(`/profile/${entry.uid ?? entry.user_id}`, { state: { from: '/leaderboard' } })}
                   className={`w-full bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4
                     hover:border-indigo-200 hover:shadow-md transition-all text-left group ${meta?.ring ?? ''}`}
                 >
                   {/* Rank badge */}
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                      meta ? meta.badge : 'bg-gray-100 text-gray-500'
-                    }`}
-                  >
-                    {meta ? meta.emoji : `#${entry.rank}`}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                    meta ? meta.badge : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {meta ? meta.label : `#${entry.rank}`}
                   </div>
 
                   {/* Avatar */}
@@ -150,8 +157,8 @@ export default function Leaderboard() {
                         </span>
                       )}
                       {entry.fraud_risk === 'medium' && (
-                        <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium shrink-0">
-                          ⚠ Unverified reviews
+                        <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium shrink-0 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> Unverified reviews
                         </span>
                       )}
                     </div>
@@ -166,13 +173,15 @@ export default function Leaderboard() {
                     )}
                     <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                       {entry.appreciation_count > 0 && (
-                        <span className="text-xs text-gray-400">
-                          ⭐ {entry.avg_ratings.toFixed(1)} avg · {entry.appreciation_count} review{entry.appreciation_count !== 1 ? 's' : ''}
+                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                          <Star className="h-3 w-3 text-amber-400 fill-amber-400" />
+                          {entry.avg_ratings.toFixed(1)} avg · {entry.appreciation_count} review{entry.appreciation_count !== 1 ? 's' : ''}
                         </span>
                       )}
                       {entry.proof_signal_count > 0 && (
-                        <span className="text-xs text-gray-400">
-                          🔐 {entry.proof_signal_count} proof signal{entry.proof_signal_count !== 1 ? 's' : ''}
+                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                          <ShieldCheck className="h-3 w-3 text-indigo-400" />
+                          {entry.proof_signal_count} proof signal{entry.proof_signal_count !== 1 ? 's' : ''}
                         </span>
                       )}
                     </div>

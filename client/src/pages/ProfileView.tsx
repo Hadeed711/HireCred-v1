@@ -1,9 +1,14 @@
 import { useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
-import type { Profile, ExperienceItem, PortfolioItem, ProofSignal, SignalType, CredibilityScore, CvAnalysis } from '../lib/types'
+import { ArrowLeft, AlertTriangle, MapPin, Eye, BriefcaseBusiness, FileText, Flag } from 'lucide-react'
+import type {
+  Profile, ExperienceItem, PortfolioItem, ProofSignal, SignalType,
+  CredibilityScore, CvAnalysis, ReportReason,
+} from '../lib/types'
 import ScoreWidget from '../components/profile/ScoreWidget'
 import AppreciationModal from '../components/appreciation/AppreciationModal'
 import AppreciationSection from '../components/appreciation/AppreciationSection'
@@ -29,11 +34,22 @@ const SIGNAL_COLORS: Record<SignalType, string> = {
   screenshot: 'bg-emerald-600 text-white',
 }
 
+const REPORT_REASONS: { value: ReportReason; label: string }[] = [
+  { value: 'fake_account', label: 'Fake or bot account' },
+  { value: 'impersonation', label: 'Impersonating someone' },
+  { value: 'fake_credentials', label: 'Fake credentials / experience' },
+  { value: 'inappropriate_content', label: 'Inappropriate content' },
+  { value: 'spam', label: 'Spam or self-promotion' },
+  { value: 'other', label: 'Other' },
+]
+
 export default function ProfileView() {
   const { userId } = useParams<{ userId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, isAuthenticated } = useAuthStore()
   const [showAppreciationModal, setShowAppreciationModal] = useState(false)
+  const [showReportModal, setShowReportModal] = useState(false)
 
   const { data: profile, isLoading, isError } = useQuery<Profile>({
     queryKey: ['profile', userId],
@@ -47,8 +63,12 @@ export default function ProfileView() {
     queryKey: ['score', profileUserId],
     queryFn: () => api.get(`/profile/${profileUserId}/score`).then((r) => r.data),
     enabled: !!profileUserId,
-    refetchInterval: (query) => (!query.state.data ? 5000 : false),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchInterval: (query) => (!query.state.data ? 3000 : false),
   })
+
+  const backTarget = (location.state as { from?: string } | null)?.from ?? (profile && user?.id === profile.user_id ? '/profile/edit' : '/dashboard')
 
   if (isLoading) {
     return (
@@ -67,23 +87,7 @@ export default function ProfileView() {
                 <div className="h-3 bg-gray-100 rounded w-1/5" />
               </div>
             </div>
-            <div className="mt-4 space-y-2">
-              <div className="h-3 bg-gray-100 rounded w-full" />
-              <div className="h-3 bg-gray-100 rounded w-5/6" />
-            </div>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 p-6 flex flex-col items-center gap-3 animate-pulse">
-            <div className="w-28 h-28 rounded-full border-8 border-gray-100" />
-            <div className="h-3 bg-gray-100 rounded w-24" />
-          </div>
-          {[1, 2].map((i) => (
-            <div key={i} className="bg-white rounded-2xl border border-gray-100 p-6 animate-pulse space-y-3">
-              <div className="h-4 bg-gray-200 rounded w-1/5" />
-              <div className="flex gap-2">
-                {[1,2,3,4].map((j) => <div key={j} className="h-7 w-20 bg-gray-100 rounded-lg" />)}
-              </div>
-            </div>
-          ))}
         </main>
       </div>
     )
@@ -94,7 +98,6 @@ export default function ProfileView() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center flex-col gap-4">
         <div className="text-5xl">😕</div>
         <p className="text-gray-700 font-semibold">Profile not found</p>
-        <p className="text-gray-400 text-sm">This profile doesn't exist or may have been removed.</p>
         <button
           onClick={() => navigate('/dashboard')}
           className="mt-2 text-sm px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors"
@@ -114,10 +117,10 @@ export default function ProfileView() {
       {/* ── Sticky header ── */}
       <header className="bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-10">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => navigate(backTarget)}
           className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1.5 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg transition-colors"
         >
-          ← Back
+          <ArrowLeft className="h-4 w-4" /> Back
         </button>
 
         <span className="text-sm font-bold bg-linear-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
@@ -149,6 +152,14 @@ export default function ProfileView() {
               >
                 Send Message
               </button>
+              {/* Report Account — visible to all authenticated non-owners */}
+              <button
+                onClick={() => setShowReportModal(true)}
+                className="text-sm px-3 py-1.5 border border-red-200 text-red-500 rounded-xl hover:bg-red-50 hover:border-red-300 transition-all font-medium"
+                title="Report this account"
+              >
+                <Flag className="inline-block h-4 w-4 mr-1 -mt-0.5" /> Report
+              </button>
             </div>
           )}
         </div>
@@ -156,9 +167,22 @@ export default function ProfileView() {
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-5">
 
+        {/* ── Suspicious account banner ── */}
+        {score?.is_suspicious && (
+          <div className="bg-amber-50 border border-amber-300 rounded-2xl px-5 py-3.5 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Suspicious Account</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                This account has been flagged as suspicious by our authenticity system or by a verified report.
+                Engage with caution.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ── Hero card ── */}
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-          {/* Gradient banner */}
           <div className="h-24 bg-linear-to-r from-indigo-500 via-violet-500 to-purple-600 relative">
             {score && (
               <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-2xl px-3 py-1.5 border border-white/30">
@@ -178,26 +202,33 @@ export default function ProfileView() {
                 <span className="text-white/80 text-xs">
                   {score.score >= 70 ? 'High Trust' : score.score >= 40 ? 'Moderate' : 'Low Trust'}
                 </span>
+                {score.is_suspicious && (
+                  <span className="text-amber-300 text-xs font-bold ml-1 inline-flex items-center gap-1">
+                    <AlertTriangle className="h-3.5 w-3.5" /> Suspicious
+                  </span>
+                )}
               </div>
             )}
           </div>
 
-          {/* Avatar + info */}
           <div className="px-6 pb-6">
-            {/* Avatar sits fully below the banner */}
             <div className="pt-4 mb-3">
               <div className="w-20 h-20 rounded-2xl bg-indigo-100 flex items-center justify-center text-3xl font-bold text-indigo-600">
                 {profile.owner_name.charAt(0).toUpperCase()}
               </div>
             </div>
 
-            {/* Name + title fully below the banner */}
             <div className="mb-4">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl font-bold text-gray-900">{profile.owner_name}</h1>
                 {profile.owner_uid && (
                   <span className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md">
                     #{profile.owner_uid}
+                  </span>
+                )}
+                {score?.is_suspicious && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                    <AlertTriangle className="inline-block h-3.5 w-3.5 mr-1 -mt-0.5" /> Suspicious
                   </span>
                 )}
               </div>
@@ -207,15 +238,15 @@ export default function ProfileView() {
             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-400 mb-4">
               {profile.location && (
                 <span className="flex items-center gap-1.5">
-                  <span className="text-base">📍</span> {profile.location}
+                  <MapPin className="h-4 w-4" /> {profile.location}
                 </span>
               )}
               <span className="flex items-center gap-1.5">
-                <span className="text-base">👁</span> {profile.profile_views} views
+                <Eye className="h-4 w-4" /> {profile.profile_views} views
               </span>
               {profile.skills.length > 0 && (
                 <span className="flex items-center gap-1.5">
-                  <span className="text-base">🛠</span> {profile.skills.length} skills
+                  <BriefcaseBusiness className="h-4 w-4" /> {profile.skills.length} skills
                 </span>
               )}
             </div>
@@ -229,11 +260,11 @@ export default function ProfileView() {
         </div>
 
         {/* ── HireCred Score ── */}
-        <ScoreWidget score={score} isLoading={scoreLoading} />
+        <ScoreWidget score={score} isLoading={scoreLoading} userId={profileUserId} isOwn={isOwn} />
 
         {/* ── Skills ── */}
         {profile.skills.length > 0 && (
-          <ViewSection title="Skills" icon="🛠">
+          <ViewSection title="Skills" icon={BriefcaseBusiness}>
             <div className="flex flex-wrap gap-2">
               {profile.skills.map((s) => (
                 <span key={s} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl text-sm font-medium border border-indigo-100">
@@ -246,7 +277,7 @@ export default function ProfileView() {
 
         {/* ── Experience ── */}
         {profile.experience.length > 0 && (
-          <ViewSection title="Experience" icon="💼">
+          <ViewSection title="Experience" icon={BriefcaseBusiness}>
             <div className="space-y-5">
               {(profile.experience as ExperienceItem[]).map((exp, i) => (
                 <div key={exp.id || i} className="flex gap-4">
@@ -272,7 +303,7 @@ export default function ProfileView() {
 
         {/* ── Portfolio ── */}
         {profile.portfolio.length > 0 && (
-          <ViewSection title="Portfolio" icon="🗂">
+          <ViewSection title="Portfolio" icon={FileText}>
             <div className="grid grid-cols-1 gap-4">
               {(profile.portfolio as PortfolioItem[]).map((item, i) => (
                 <div key={item.id || i} className="border border-gray-200 rounded-xl p-4 hover:border-indigo-200 hover:bg-indigo-50/30 transition-colors group">
@@ -295,10 +326,13 @@ export default function ProfileView() {
                         <p className="text-sm text-gray-600 mt-1 leading-relaxed">{item.description}</p>
                       )}
                       {item.tech_stack.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2.5">
-                          {item.tech_stack.map((t) => (
-                            <span key={t} className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-md font-medium">{t}</span>
-                          ))}
+                        <div className="mt-2.5">
+                          <p className="text-xs text-gray-400 font-medium mb-1.5">Skills</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {item.tech_stack.map((t) => (
+                              <span key={t} className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-md font-medium border border-indigo-100">{t}</span>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -316,7 +350,7 @@ export default function ProfileView() {
 
         {/* ── Proof Signals ── */}
         {profile.proof_signals.length > 0 && (
-          <ViewSection title="Proof Signals" icon="🔐">
+          <ViewSection title="Proof Signals" icon={FileText}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {profile.proof_signals.map((s: ProofSignal) => (
                 <div key={s.id} className="flex items-start gap-3 p-3.5 bg-gray-50 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors">
@@ -344,7 +378,6 @@ export default function ProfileView() {
           </ViewSection>
         )}
 
-        {/* Empty profile state */}
         {!profile.bio && profile.skills.length === 0 && profile.experience.length === 0 && (
           <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center">
             <p className="text-4xl mb-3">📝</p>
@@ -370,17 +403,127 @@ export default function ProfileView() {
           onClose={() => setShowAppreciationModal(false)}
         />
       )}
+
+      {/* Report modal */}
+      {showReportModal && profileUserId && (
+        <ReportModal
+          reportedUserId={profileUserId}
+          reportedUserName={profile.owner_name}
+          onClose={() => setShowReportModal(false)}
+        />
+      )}
     </div>
   )
 }
 
+// ── Report Account Modal ──────────────────────────────────────────────────────
+
+function ReportModal({
+  reportedUserId,
+  reportedUserName,
+  onClose,
+}: {
+  reportedUserId: string
+  reportedUserName: string
+  onClose: () => void
+}) {
+  const [reason, setReason] = useState<ReportReason>('fake_account')
+  const [evidence, setEvidence] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      await api.post('/reports', {
+        reported_user_id: reportedUserId,
+        reason,
+        evidence_text: evidence.trim() || null,
+      })
+      toast.success('Report submitted. An admin will review it.')
+      onClose()
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Failed to submit report.'
+      toast.error(msg)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-base font-bold text-gray-900">Report Account</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+
+        <p className="text-sm text-gray-500 mb-5">
+          Reporting <span className="font-semibold text-gray-700">{reportedUserName}</span>.
+          An admin will review your report and take action if appropriate.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Reason</label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value as ReportReason)}
+              className="w-full text-sm border border-gray-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            >
+              {REPORT_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+              Evidence <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={evidence}
+              onChange={(e) => setEvidence(e.target.value)}
+              placeholder="Describe what you noticed — specific details help the admin decide faster..."
+              rows={4}
+              className="w-full text-sm border border-gray-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 text-sm py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 text-sm py-2.5 bg-red-500 text-white rounded-xl hover:bg-red-600 disabled:opacity-60 transition-colors font-medium"
+            >
+              {submitting ? 'Submitting…' : 'Submit Report'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Shared components ─────────────────────────────────────────────────────────
+
 function CvSection({ cvUrl, cvAnalysis }: { cvUrl: string; cvAnalysis: CvAnalysis | null }) {
   return (
-    <ViewSection title="CV / Resume" icon="📄">
+          <ViewSection title="CV / Resume" icon={FileText}>
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-0">
           {cvAnalysis?.experience_summary && (
             <p className="text-sm text-gray-600 mb-2">{cvAnalysis.experience_summary}</p>
+          )}
+          {cvAnalysis?.cv_title && (
+            <p className="text-xs text-gray-500 mb-2">CV title: <span className="font-medium">{cvAnalysis.cv_title}</span></p>
           )}
           {cvAnalysis?.extracted_skills && cvAnalysis.extracted_skills.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -408,11 +551,11 @@ function CvSection({ cvUrl, cvAnalysis }: { cvUrl: string; cvAnalysis: CvAnalysi
   )
 }
 
-function ViewSection({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
+function ViewSection({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-shadow">
       <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-        <span>{icon}</span>
+        <Icon className="h-4.5 w-4.5 text-indigo-600" />
         {title}
         <span className="flex-1 h-px bg-gray-100 ml-1" />
       </h2>

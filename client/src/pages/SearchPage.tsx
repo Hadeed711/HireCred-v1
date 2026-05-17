@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
+import { Bot, Search, AlertTriangle, BriefcaseBusiness, Trophy } from 'lucide-react'
 
 interface CandidateResult {
   user_id: string
@@ -47,29 +48,66 @@ const EXAMPLE_QUERIES = [
 
 function LoadingState() {
   return (
-    <div className="flex flex-col items-center gap-6 py-20">
-      <div className="relative">
-        <div className="w-16 h-16 rounded-full border-4 border-indigo-100 border-t-indigo-500 animate-spin" />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-xl">🤖</span>
-        </div>
-      </div>
-      <div className="text-center">
-        <p className="text-gray-800 font-semibold">AI is analyzing your request…</p>
-        <p className="text-sm text-gray-400 mt-1">Parsing intent, matching skills, ranking by trust score</p>
-      </div>
-      {/* Animated steps */}
-      <div className="flex flex-col gap-2 text-sm text-gray-400 w-64">
-        {['Parsing your search intent…', 'Matching candidate skills…', 'Ranking by HireCred score…'].map((step, i) => (
-          <div
-            key={step}
-            className="flex items-center gap-2 animate-pulse"
-            style={{ animationDelay: `${i * 0.4}s` }}
-          >
-            <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-            {step}
+    <div className="space-y-6 py-6" aria-busy="true" aria-live="polite">
+      <div className="rounded-3xl border border-indigo-100 bg-white/80 backdrop-blur p-6 shadow-sm">
+        <div className="flex items-center gap-4 mb-5">
+          <div className="relative shrink-0">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 animate-pulse" />
+            <Bot className="absolute inset-0 m-auto h-6 w-6 text-indigo-600" />
           </div>
-        ))}
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-44 bg-gray-200 rounded animate-pulse" />
+            <div className="h-3 w-full max-w-md bg-gray-100 rounded animate-pulse" />
+            <div className="h-3 w-2/3 bg-gray-100 rounded animate-pulse" />
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3 mb-5">
+          {[
+            { label: 'Parsing intent', icon: Search },
+            { label: 'Matching profiles', icon: BriefcaseBusiness },
+            { label: 'Ranking trust', icon: Trophy },
+          ].map(({ label, icon: Icon }) => (
+            <div key={label} className="rounded-2xl border border-gray-100 bg-gray-50 p-3 animate-pulse">
+              <div className="flex items-center gap-2 mb-2 text-gray-600">
+                <Icon className="h-3.5 w-3.5 text-indigo-500" />
+                <div className="h-3 w-24 bg-gray-200 rounded" />
+              </div>
+              <div className="h-2 w-full bg-gray-100 rounded" />
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start gap-4">
+                <div className="w-11 h-11 rounded-full bg-gray-200 animate-pulse shrink-0" />
+                <div className="flex-1 min-w-0 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-2 flex-1">
+                      <div className="h-4 w-40 bg-gray-200 rounded animate-pulse" />
+                      <div className="h-3 w-28 bg-gray-100 rounded animate-pulse" />
+                    </div>
+                    <div className="h-6 w-28 bg-gray-100 rounded-xl animate-pulse" />
+                  </div>
+                  <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full w-2/3 bg-indigo-200 rounded-full animate-pulse" />
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <div className="h-6 w-20 bg-gray-100 rounded-lg animate-pulse" />
+                    <div className="h-6 w-24 bg-gray-100 rounded-lg animate-pulse" />
+                    <div className="h-6 w-16 bg-gray-100 rounded-lg animate-pulse" />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 pt-1">
+                    <div className="h-3 w-36 bg-gray-100 rounded animate-pulse" />
+                    <div className="h-8 w-28 bg-indigo-100 rounded-xl animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -116,7 +154,7 @@ export default function SearchPage() {
         {/* Heading */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-600 text-xs font-semibold px-3.5 py-1.5 rounded-full mb-4 border border-indigo-100">
-            🤖 AI-Powered Search
+            <Bot className="h-3.5 w-3.5" /> AI-Powered Search
           </div>
           <h1 className="text-4xl font-bold text-gray-900 mb-3 tracking-tight">Find Trusted Professionals</h1>
           <p className="text-gray-500 max-w-lg mx-auto text-sm leading-relaxed">
@@ -128,7 +166,7 @@ export default function SearchPage() {
         <form onSubmit={handleSubmit} className="mb-6">
           <div className="flex gap-3 bg-white border border-gray-200 rounded-2xl p-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent transition-all">
             <div className="flex-1 flex items-center gap-2 pl-2">
-              <span className="text-gray-400 shrink-0">🔍</span>
+              <Search className="text-gray-400 shrink-0 h-4 w-4" />
               <input
                 type="text"
                 value={query}
@@ -171,7 +209,7 @@ export default function SearchPage() {
         {/* Tier notice — domain fallback */}
         {!isPending && data && data.search_tier_used === 'domain' && data.results.length > 0 && (
           <div className="flex items-center gap-2 p-3 mb-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-            <span>⚠️</span>
+            <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>No exact match found — showing the most related profiles for your query.</span>
           </div>
         )}
@@ -202,7 +240,7 @@ export default function SearchPage() {
             ))}
             {data.parsed.trust_priority && (
               <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-semibold border border-emerald-200">
-                ✓ Trust priority
+                Trust priority
               </span>
             )}
             {data.parsed.experience_level && (
@@ -218,7 +256,7 @@ export default function SearchPage() {
           <>
             {data.results.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
-                <p className="text-5xl mb-4">🔍</p>
+                <Search className="mx-auto mb-4 h-10 w-10 text-gray-400" />
                 <p className="text-gray-700 font-semibold">No candidates found</p>
                 <p className="text-gray-400 text-sm mt-1.5 max-w-xs mx-auto">
                   Try a broader description, or different keywords like the technology name.
@@ -311,6 +349,7 @@ export default function SearchPage() {
                           </span>
                           <Link
                             to={`/profile/${candidate.uid ?? candidate.user_id}`}
+                            state={{ from: '/search' }}
                             className="text-xs px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm shadow-indigo-200"
                           >
                             View Profile →

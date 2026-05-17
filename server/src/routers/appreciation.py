@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -55,7 +55,6 @@ class AppreciationCreated(BaseModel):
 @router.post("", response_model=AppreciationCreated, status_code=status.HTTP_201_CREATED)
 async def submit_appreciation(
     body: AppreciationCreate,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -97,9 +96,9 @@ async def submit_appreciation(
     await db.commit()
     await db.refresh(appreciation)
 
-    # Recompute credibility score then run fraud detection (sequential — fraud adjusts the base score)
-    background_tasks.add_task(compute_and_save_score, body.to_user_id)
-    background_tasks.add_task(run_fraud_detection, body.to_user_id)
+    # Recompute credibility score immediately, then apply fraud detection.
+    await compute_and_save_score(body.to_user_id)
+    await run_fraud_detection(body.to_user_id)
 
     appreciation_resp = AppreciationResponse(
         id=appreciation.id,
