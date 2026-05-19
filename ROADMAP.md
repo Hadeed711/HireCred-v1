@@ -61,7 +61,7 @@
 - [x] Portfolio "Tech Stack" label renamed to "Skills"
 - [x] Browser native password eye icon suppressed (CSS `::-ms-reveal` + `::-webkit-credentials-auto-fill-button`)
 - [x] DB connection pool: `pool_pre_ping=True` + `pool_recycle=1800` (fixes connection closed errors)
-- [x] Ollama timeout: 180s → 60s (faster fallback to rule-based scoring)
+- [x] Ollama timeout: set to 120s (qwen2.5:3b on CPU needs 65–200s for 200-token output; 120s gives the model time while still falling back if truly hung)
 - [x] URL checker timeout: 8s → 4s
 - [x] pdfplumber installed (was missing from venv despite being in requirements.txt)
 - [x] CV analysis pipeline removed: upload stores file only; no pdfplumber extraction, no Ollama CV analysis, no CV↔profile match

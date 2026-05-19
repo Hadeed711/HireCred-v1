@@ -155,7 +155,17 @@ async def update_profile(
     for field, value in update_data.items():
         setattr(profile, field, value)
 
+    # Explicitly mark JSONB/ARRAY fields as modified so SQLAlchemy
+    # always emits an UPDATE even when the value reference is unchanged.
+    from sqlalchemy.orm.attributes import flag_modified
+    for mutable_field in ("skills", "experience", "portfolio"):
+        if mutable_field in update_data:
+            flag_modified(profile, mutable_field)
+
     await db.commit()
+
+    # Refresh from DB to build response from committed data, not the identity-map cache
+    await db.refresh(profile, ["skills", "experience", "portfolio", "bio", "title", "location"])
 
     result = await db.execute(
         select(Profile)
@@ -167,11 +177,9 @@ async def update_profile(
     asyncio.create_task(compute_and_save_score(user_id))
 
     response = _build_profile_response(profile)
-    # Attach warnings as a non-blocking header so the frontend can display them
-    from fastapi.responses import JSONResponse
-    import json as _json
     if validation_warnings:
-        resp_data = response.model_dump()
+        from fastapi.responses import JSONResponse
+        resp_data = response.model_dump(mode="json")
         resp_data["_warnings"] = validation_warnings
         return JSONResponse(content=resp_data)
     return response

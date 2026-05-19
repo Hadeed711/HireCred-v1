@@ -144,10 +144,10 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
                 for ps in profile.proof_signals
             ]
 
-            # ── Step 1: Check whether a CV file is present (no analysis) ────────
+            # ── Step 1: Check whether a CV file is present (no analysis) ───────
             has_cv = bool(profile.cv_file_path)
 
-            # ── Step 2: Authenticity heuristic checks ─────────────────────────
+            # ── Step 2: Authenticity heuristic checks ────────────────────────
             profile_data_for_auth = {
                 "bio": profile.bio,
                 "title": profile.title,
@@ -161,7 +161,7 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
                 owner_name=owner_name,
             )
 
-            # ── Step 4: URL reachability check ────────────────────────────────
+            # ── Step 3: URL reachability check ────────────────────────────────
             url_warnings_async = await _check_urls_async(
                 profile.portfolio or [], proof_signals_data
             )
@@ -170,7 +170,7 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
             )
             all_url_warnings = list(dict.fromkeys(url_warnings_async + url_warnings_format))
 
-            # ── Step 3: Build full profile_data for AI scoring ────────────────
+            # ── Step 4: Build full profile_data for AI scoring ────────────────
             profile_data = {
                 "owner_name": owner_name,
                 "title": profile.title,
@@ -185,7 +185,7 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
                 "url_warnings": all_url_warnings,
             }
 
-            # ── Step 4: AI scoring (with full evidence context) ───────────────
+            # ── Step 5: AI scoring (with full evidence context) ───────────────
             try:
                 score_data = await evaluate_profile(profile_data)
                 if score_data.get("credibility_score") == 0 and not score_data.get("strengths"):
@@ -195,7 +195,7 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
                 logger.warning("AI scoring failed for user %s (%s); using rule-based fallback", user_id, reason)
                 score_data = _rule_based_score(profile_data)
 
-            # ── Step 5: Apply authenticity penalty on top of AI score ─────────
+            # ── Step 6: Apply authenticity penalty on top of AI score ─────────
             raw_score = score_data["credibility_score"]
             auth_penalty = auth_result["penalty"]
             if auth_penalty > 0:
@@ -210,13 +210,13 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
             elif auth_result["risk_level"] == "medium" and auth_penalty >= 20:
                 raw_score = min(raw_score, 35)
 
-            # ── Step 6: Apply URL warning penalty ─────────────────────────────
+            # ── Step 7: Apply URL warning penalty ─────────────────────────────
             if len(all_url_warnings) >= 1:
                 raw_score = max(0, raw_score - min(len(all_url_warnings) * 6, 18))
 
             score_data["credibility_score"] = max(0, min(100, raw_score))
 
-            # ── Step 7: Determine is_suspicious ──────────────────────────────
+            # ── Step 8: Determine is_suspicious ──────────────────────────────
             # High-risk = automatically suspicious; medium = suspicious too
             is_suspicious = auth_result["risk_level"] in ("medium", "high")
 
@@ -229,7 +229,7 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
             else:
                 fraud_risk = FraudRisk.low
 
-            # ── Step 8: Upsert CredibilityScore ───────────────────────────────
+            # ── Step 9: Upsert CredibilityScore ───────────────────────────────
             score_result = await db.execute(
                 select(CredibilityScore).where(CredibilityScore.user_id == user_id)
             )

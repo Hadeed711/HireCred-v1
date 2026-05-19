@@ -15,9 +15,6 @@ router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
 _cache: dict = {"data": None, "expires_at": 0.0}
 _CACHE_TTL = 120  # 2 minutes
 
-_cache["data"] = None
-_cache["expires_at"] = 0.0
-
 
 def invalidate_leaderboard_cache() -> None:
     _cache["data"] = None

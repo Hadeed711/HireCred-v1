@@ -18,7 +18,7 @@ async def call_ollama(prompt: str, num_predict: int = 1024) -> str:
             "num_predict": num_predict,
         },
     }
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=120.0) as client:
         resp = await client.post(f"{settings.ollama_host}/api/generate", json=payload)
         if not resp.is_success:
             body = ""

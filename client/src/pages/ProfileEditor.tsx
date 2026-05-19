@@ -259,7 +259,6 @@ export default function ProfileEditor() {
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([])
 
   // validation state
-  const [warningCount, setWarningCount] = useState(0)
   const [activeWarnings, setActiveWarnings] = useState<string[]>([])
   const [consistencyWarn, setConsistencyWarn] = useState<string | null>(null)
 
@@ -308,19 +307,18 @@ export default function ProfileEditor() {
 
   const saveMutation = useMutation({
     mutationFn: (data: object) => api.put(`/profile/${user?.id}`, data),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['profile', user?.id] })
       qc.invalidateQueries({ queryKey: ['score', user?.uid ?? user?.id] })
-      setActiveWarnings([])
+      const serverWarnings: string[] = res.data?._warnings ?? []
+      setActiveWarnings(serverWarnings)
       toast.success('Profile saved! Score updating in background…')
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       if (msg) {
-        const newCount = warningCount + 1
-        setWarningCount(newCount)
         setActiveWarnings([msg])
-        toast.error('Fix the issue before saving')
+        toast.error(msg)
       } else {
         toast.error('Failed to save profile')
       }
@@ -342,15 +340,22 @@ export default function ProfileEditor() {
   }
 
   function handleSave() {
-    // Client-side validation
-    const errors = validateProfileForSave({ bio, title, experience, portfolio, skills })
-    if (errors.length > 0) {
-      const newCount = warningCount + 1
-      setWarningCount(newCount)
-      setActiveWarnings(errors.map((e) => e.message))
+    // Only block on structural errors: invalid URL format and exact duplicate entries.
+    // Length warnings (bio < 80 chars, short description) do NOT block — backend handles them.
+    const allErrors = validateProfileForSave({ bio, title, experience, portfolio, skills })
+    const blockingErrors = allErrors.filter((e) =>
+      e.field.includes('url') || e.field.includes('duplicate') || e.message.toLowerCase().includes('duplicate') || e.message.toLowerCase().includes('must start with')
+    )
+
+    if (blockingErrors.length > 0) {
+      setActiveWarnings(blockingErrors.map((e) => e.message))
+      toast.error('Fix the highlighted issues before saving.')
       return
     }
-    setActiveWarnings([])
+
+    // Non-blocking warnings (bio length, short desc) → show as info but still save
+    const softWarnings = allErrors.filter((e) => !blockingErrors.includes(e))
+    setActiveWarnings(softWarnings.map((e) => e.message))
     saveMutation.mutate({ bio, title, location, skills, experience, portfolio })
   }
 
@@ -424,8 +429,6 @@ export default function ProfileEditor() {
       toast.success('CV uploaded! Score updating in background…')
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      const newCount = warningCount + 1
-      setWarningCount(newCount)
       setActiveWarnings([msg || 'CV upload failed — ensure it is a real, complete CV.'])
       toast.error(msg || 'CV upload failed')
     } finally {
@@ -455,8 +458,6 @@ export default function ProfileEditor() {
   const completionPct = Math.round((completionPoints.filter(Boolean).length / completionPoints.length) * 100)
   const completionColor = completionPct >= 80 ? 'bg-emerald-500' : completionPct >= 50 ? 'bg-amber-400' : 'bg-red-400'
 
-  const saveBlocked = warningCount >= 2 && activeWarnings.length > 0
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sticky header */}
@@ -479,8 +480,7 @@ export default function ProfileEditor() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saveMutation.isPending || saveBlocked}
-            title={saveBlocked ? 'Fix all issues before saving' : undefined}
+            disabled={saveMutation.isPending}
             className="text-sm px-4 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium shadow-sm shadow-indigo-200"
           >
             {saveMutation.isPending ? (
@@ -491,7 +491,7 @@ export default function ProfileEditor() {
                 </svg>
                 Saving…
               </span>
-            ) : saveBlocked ? '🚫 Fix Issues' : 'Save changes'}
+            ) : 'Save changes'}
           </button>
         </div>
       </header>
@@ -499,7 +499,7 @@ export default function ProfileEditor() {
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
 
         {/* Validation warning banner */}
-        <ValidationWarningBanner warnings={activeWarnings} warningCount={warningCount} />
+        <ValidationWarningBanner warnings={activeWarnings} />
 
         {/* Basic Info */}
         <Section title="Basic Info">
@@ -598,8 +598,8 @@ export default function ProfileEditor() {
         {/* CV Upload */}
         <Section title="CV / Resume">
           <p className="text-sm text-gray-500 mb-4">
-            Upload your CV to help hirers review your full background. Accepted formats: PDF, DOCX (max 5 MB).
-            The CV is analyzed by AI and must be a real, complete document.
+            Upload your CV to help hirers review your full background. Accepted format: PDF only (max 5 MB).
+            The CV must be a real, complete document.
           </p>
 
           {profile?.cv_url && (
@@ -636,7 +636,7 @@ export default function ProfileEditor() {
               <input
                 ref={cvRef}
                 type="file"
-                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                accept=".pdf,application/pdf"
                 onChange={(e) => setCvFile(e.target.files?.[0] ?? null)}
                 className="input text-sm"
               />

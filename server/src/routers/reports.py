@@ -98,23 +98,25 @@ def _report_to_response(r: AccountReport) -> ReportResponse:
     )
 
 
-async def _apply_suspicious_penalty(reported_user_id: uuid.UUID, db: AsyncSession) -> None:
-    """Mark score as suspicious and deduct penalty points."""
-    result = await db.execute(
-        select(CredibilityScore).where(CredibilityScore.user_id == reported_user_id)
-    )
-    score_row = result.scalar_one_or_none()
-    if score_row:
-        score_row.is_suspicious = True
-        score_row.score = max(0, score_row.score - _APPROVED_REPORT_PENALTY)
-        if "Admin-approved report: suspicious account" not in (score_row.authenticity_flags or []):
-            score_row.authenticity_flags = (score_row.authenticity_flags or []) + [
-                "Admin-approved report: account was flagged as suspicious by a hirer."
-            ]
-        if score_row.fraud_risk == FraudRisk.low:
-            score_row.fraud_risk = FraudRisk.medium
-        score_row.computed_at = datetime.utcnow()
-        await db.commit()
+async def _apply_suspicious_penalty(reported_user_id: uuid.UUID) -> None:
+    """Mark score as suspicious and deduct penalty points. Opens its own DB session."""
+    from src.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(CredibilityScore).where(CredibilityScore.user_id == reported_user_id)
+        )
+        score_row = result.scalar_one_or_none()
+        if score_row:
+            score_row.is_suspicious = True
+            score_row.score = max(0, score_row.score - _APPROVED_REPORT_PENALTY)
+            if "Admin-approved report: suspicious account" not in (score_row.authenticity_flags or []):
+                score_row.authenticity_flags = (score_row.authenticity_flags or []) + [
+                    "Admin-approved report: account was flagged as suspicious by a hirer."
+                ]
+            if score_row.fraud_risk == FraudRisk.low:
+                score_row.fraud_risk = FraudRisk.medium
+            score_row.computed_at = datetime.utcnow()
+            await db.commit()
 
 
 async def _remove_suspicious_if_no_approved(reported_user_id: uuid.UUID, db: AsyncSession) -> None:
@@ -256,8 +258,8 @@ async def admin_approve_report(
     report.resolved_at = datetime.utcnow()
     await db.commit()
 
-    # Apply suspicious penalty in background so response is fast
-    background_tasks.add_task(_apply_suspicious_penalty, report.reported_user_id, db)
+    # Apply suspicious penalty in background — uses its own session, not the request session
+    background_tasks.add_task(_apply_suspicious_penalty, report.reported_user_id)
 
     return {"message": "Report approved. Suspicious tag and score penalty applied."}
 

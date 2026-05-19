@@ -79,7 +79,7 @@ hireCred-v1/
         │   ├── fraud_service.py
         │   └── auth_service.py
         ├── ai/
-        │   ├── ollama_client.py        # call_ollama (60s timeout), extract_json, health
+        │   ├── ollama_client.py        # call_ollama (120s timeout), extract_json, health
         │   ├── credibility_prompt.py   # scoring prompt with evidence context
         │   ├── cv_prompt.py            # CV analysis helpers (not used in pipeline)
         │   ├── appreciation_prompt.py
@@ -109,7 +109,7 @@ compute_and_save_score():
     3. Authenticity heuristics (16 checks) → flags + penalty (0–60) + risk_level
     4. URL reachability checks (async parallel, 4s timeout) → URL warnings
     5. Build evidence context for LLM (profile data, has_cv, auth flags, URL warnings)
-    6. Ollama scoring (60s timeout) → score (0–100) + strengths + risks + fraud_flags
+    6. Ollama scoring (120s timeout) → score (0–100) + strengths + risks + fraud_flags
        (fallback: rule_based_score if Ollama unavailable or returns bad JSON)
     7. Apply authenticity penalty (score − penalty, floor 0)
     8. Apply hard ceiling:
@@ -281,7 +281,7 @@ Frontend displays them as toasts/banners. Score is penalized by the same issues 
 | `credibility_scores` | user_id, score, strengths, risks, fraud_risk, fraud_flags, is_suspicious, authenticity_flags, cv_match_score (null), cv_match_warnings ([]), url_warnings |
 | `proof_signals` | profile_id, signal_type, title, url, file_path, description |
 | `appreciations` | to_user_id, from_user_id, skill_rating, communication_rating, reliability_rating, summary, fraud_flagged |
-| `messages` | sender_id, receiver_id, conversation_id, content, image_url, is_deleted, is_read |
+| `messages` | sender_id, receiver_id, conversation_id, content, image_path, is_deleted, is_read |
 | `account_reports` | reporter_id, reported_user_id, reason, evidence_text, status, admin_note, resolved_at |
 
 ---
@@ -292,7 +292,7 @@ Frontend displays them as toasts/banners. Score is penalized by the same issues 
 |---------|-------|--------|
 | DB `pool_pre_ping` | True | Prevents "connection is closed" on Neon serverless |
 | DB `pool_recycle` | 1800s | Refreshes idle connections every 30 min |
-| Ollama timeout | 60s | Rule-based fallback kicks in faster if model hangs |
+| Ollama timeout | 120s | Enough for qwen2.5:3b on CPU (1–3 tok/s × 200 tokens); rule-based fallback if exceeded |
 | URL check timeout | 4s | Faster failure detection per URL |
 | Score task | `asyncio.create_task()` | Never blocks HTTP response |
 | Leaderboard cache | 2 min | Avoids repeated heavy query |
