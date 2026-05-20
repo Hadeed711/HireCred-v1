@@ -161,14 +161,14 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
     # ── 1. Suspicious name ────────────────────────────────────────────────────
     if owner_name and _SUSPICIOUS_NAME_RE.match(owner_name.strip()):
         flags.append(f'Name "{owner_name}" looks like a test or dummy account.')
-        penalty += 15
+        penalty += 6
 
     # ── 2. Disposable email ───────────────────────────────────────────────────
     if owner_email and "@" in owner_email:
         domain = owner_email.split("@")[-1].lower()
         if domain in _DISPOSABLE_DOMAINS:
             flags.append(f"Email uses a known disposable email provider ({domain}).")
-            penalty += 20
+            penalty += 7
 
     # ── 3. Bio boilerplate ────────────────────────────────────────────────────
     if bio:
@@ -178,11 +178,11 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
             flags.append(
                 f"Bio contains boilerplate/generic phrases: {', '.join(repr(p) for p in matched_phrases[:3])}."
             )
-            penalty += 15
+            penalty += 6
 
         if len(bio.split()) < 15:
             flags.append("Bio is extremely short (fewer than 15 words).")
-            penalty += 8
+            penalty += 5
 
     # ── 4. Sci-fi / fantasy content detection ─────────────────────────────────
     # Check bio, title, and all experience + portfolio descriptions
@@ -210,12 +210,12 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
             f"Profile contains sci-fi/fantasy content that does not reflect real professional work "
             f"(detected: {', '.join(repr(h) for h in scifi_hits[:3])})."
         )
-        penalty += 20
+        penalty += 8
     elif len(scifi_hits) == 1:
         flags.append(
             f"Profile may contain fictional content: detected phrase '{scifi_hits[0]}'."
         )
-        penalty += 10
+        penalty += 5
 
     # ── 5. Fictional location ─────────────────────────────────────────────────
     location = (profile_data.get("location") or "").strip()
@@ -223,14 +223,14 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
         flags.append(
             f'Location "{location}" appears to be a fictional or non-existent place.'
         )
-        penalty += 15
+        penalty += 6
 
     # ── 6. Absurd title ───────────────────────────────────────────────────────
     if title and _ABSURD_TITLE_RE.search(title):
         flags.append(
             f'Professional title "{title}" contains non-professional or fictional keywords.'
         )
-        penalty += 12
+        penalty += 6
 
     # ── 7. Absurd numeric claims in bio or experience ─────────────────────────
     combined_text_for_numbers = bio + " " + " ".join(
@@ -242,7 +242,7 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
             f"Profile contains implausible numeric claims "
             f"(e.g. '{absurd_number_match.group(0)[:60]}')."
         )
-        penalty += 15
+        penalty += 6
 
     # ── 8. Far-future experience dates ────────────────────────────────────────
     for exp in experience:
@@ -256,19 +256,19 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
                 f'Experience at "{exp.get("company", "unknown")}" has a start year far in the '
                 f"future ({year_start}) — likely fictional or a data entry error."
             )
-            penalty += 18
+            penalty += 8
 
         elif year_start and year_start > _CURRENT_YEAR:
             flags.append(
                 f'Experience at "{exp.get("company", "unknown")}" has a start date in the future ({start}).'
             )
-            penalty += 8
+            penalty += 5
 
         if year_end and year_end > _CURRENT_YEAR + 2:
             flags.append(
                 f'Experience end date at "{exp.get("company", "unknown")}" is far in the future ({year_end}).'
             )
-            penalty += 10
+            penalty += 6
 
     # ── 9. Fictional company names ────────────────────────────────────────────
     fictional_companies: list[str] = []
@@ -281,7 +281,7 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
             f"Experience lists fictional or implausible company names: "
             f"{', '.join(repr(c) for c in fictional_companies[:3])}."
         )
-        penalty += 15
+        penalty += 6
 
     # ── 10. Joke / non-professional skills ────────────────────────────────────
     joke_skills_found: list[str] = []
@@ -295,10 +295,10 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
             f"Skills list contains joke or non-professional entries: "
             f"{', '.join(repr(s) for s in joke_skills_found[:4])}."
         )
-        penalty += 18
+        penalty += 8
     elif len(joke_skills_found) == 1:
         flags.append(f"Skill '{joke_skills_found[0]}' does not appear to be a real professional skill.")
-        penalty += 8
+        penalty += 5
 
     # ── 11. Duplicate experience descriptions ─────────────────────────────────
     if len(experience) >= 2:
@@ -311,7 +311,7 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
                         "Two experience entries have nearly identical descriptions — "
                         "copy-paste detected."
                     )
-                    penalty += 12
+                    penalty += 6
                     break
             else:
                 continue
@@ -334,7 +334,7 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
                 f"All portfolio links point to the same domain ({non_empty[0]}) — "
                 "likely placeholder or copy-paste."
             )
-            penalty += 12
+            penalty += 6
 
     # ── 13. Portfolio identical descriptions ──────────────────────────────────
     if len(portfolio) >= 2:
@@ -343,12 +343,12 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
             ratio = SequenceMatcher(None, p_descs[0].lower(), p_descs[-1].lower()).ratio()
             if ratio > 0.85:
                 flags.append("Portfolio item descriptions are nearly identical — copy-paste detected.")
-                penalty += 12
+                penalty += 6
 
     # ── 14. Unrealistically large or entirely generic skill list ──────────────
     if len(skills) > 25:
         flags.append(f"Skill list is unusually large ({len(skills)} skills) — may be inflated.")
-        penalty += 8
+        penalty += 5
 
     generic_skills = {
         "teamwork", "communication", "leadership", "problem solving",
@@ -361,7 +361,7 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
             flags.append(
                 "Most listed skills are generic non-technical skills with no specific technology skills."
             )
-            penalty += 8
+            penalty += 5
 
     # ── 15. Title ↔ skills domain mismatch (major flag) ───────────────────────
     if title and skills:
@@ -377,19 +377,19 @@ def check_profile_authenticity(profile_data: dict, owner_email: str = "", owner_
             flags.append(
                 f'Profile title is "{title}" (technical) but skills are all non-technical.'
             )
-            penalty += 15
+            penalty += 6
 
     # ── 16. Completely empty profile ──────────────────────────────────────────
     if not bio and not skills and not experience and not portfolio:
         flags.append("Profile is completely empty — no bio, skills, experience, or portfolio.")
-        penalty += 10
+        penalty += 8
 
     penalty = min(penalty, 60)
     if penalty == 0:
         risk_level = "none"
-    elif penalty <= 10:
+    elif penalty <= 8:
         risk_level = "low"
-    elif penalty <= 28:
+    elif penalty <= 24:
         risk_level = "medium"
     else:
         risk_level = "high"

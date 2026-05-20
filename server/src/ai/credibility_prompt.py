@@ -22,11 +22,14 @@ Scoring criteria (total 100 pts):
 - CV uploaded: 12 pts (0 if no CV)
 
 Important rules:
-- AUTH FLAGS listed below are confirmed red flags — deduct points for each.
-- URL WARNINGS are dead or unreachable links — deduct per warning.
-- Sci-fi content, fictional dates (year 3000+), joke skills, impossible claims → score must be 15 or lower.
+- AUTH FLAGS listed below are confirmed red flags — deduct 5 to 8 points per flag. Do NOT collapse the entire score.
+- URL WARNINGS are dead or unreachable links — deduct 3 pts per warning.
+- Dummy, placeholder, or fictional content in ONE specific section → deduct 5 to 8 points for that section only. Other genuine sections MUST still earn their full points.
+- Sci-fi content, fictional dates, joke skills, or impossible claims in a SINGLE section → subtract 6 to 8 pts from that section's contribution only, not the whole score.
+- Only if the ENTIRE profile is fabricated across ALL sections should the total score be very low.
+- Good, genuine, and detailed sections must always be scored on their own merit regardless of other sections having issues.
 - Strengths and risks: write max 6 words each, max 2 items each.
-- fraud_flags: only if there is clear evidence of deception.
+- fraud_flags: only if there is clear evidence of deception across multiple sections.
 - Compute a UNIQUE score based on THIS profile's actual content."""
 
 # JSON prefix — model must fill in the number, cannot copy an example

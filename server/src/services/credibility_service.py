@@ -21,15 +21,7 @@ def _rule_based_score(profile_data: dict) -> dict:
     strengths = []
     risks = []
 
-    # If authenticity flags are present (pre-computed), cap score early for high-risk profiles
     auth_flags = profile_data.get("authenticity_flags") or []
-    if len(auth_flags) >= 3:
-        return {
-            "credibility_score": 8,
-            "strengths": [],
-            "risks": ["Multiple authenticity red flags detected — profile appears fake or test data."] + auth_flags[:3],
-            "fraud_flags": ["fake_profile:multiple authenticity flags triggered"],
-        }
 
     if profile_data.get("bio"):
         bio_words = len(str(profile_data.get("bio") or "").split())
@@ -204,15 +196,9 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
                     f"Authenticity penalty ({auth_penalty} pts): " + "; ".join(auth_result["flags"][:2])
                 ]
 
-            # Hard ceiling for high-risk profiles — even if AI over-scored, cap at 15
-            if auth_result["risk_level"] == "high":
-                raw_score = min(raw_score, 15)
-            elif auth_result["risk_level"] == "medium" and auth_penalty >= 20:
-                raw_score = min(raw_score, 35)
-
             # ── Step 7: Apply URL warning penalty ─────────────────────────────
             if len(all_url_warnings) >= 1:
-                raw_score = max(0, raw_score - min(len(all_url_warnings) * 6, 18))
+                raw_score = max(0, raw_score - min(len(all_url_warnings) * 2, 8))
 
             score_data["credibility_score"] = max(0, min(100, raw_score))
 
@@ -222,9 +208,9 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
 
             # Determine fraud_risk from fraud_flags AND authenticity risk level
             fraud_flags = score_data.get("fraud_flags", [])
-            if len(fraud_flags) >= 2 or auth_result["risk_level"] == "high" or auth_penalty >= 40:
+            if len(fraud_flags) >= 2 or auth_result["risk_level"] == "high" or auth_penalty >= 25:
                 fraud_risk = FraudRisk.high
-            elif len(fraud_flags) >= 1 or auth_result["risk_level"] == "medium" or auth_penalty >= 20:
+            elif len(fraud_flags) >= 1 or auth_result["risk_level"] == "medium" or auth_penalty >= 12:
                 fraud_risk = FraudRisk.medium
             else:
                 fraud_risk = FraudRisk.low
