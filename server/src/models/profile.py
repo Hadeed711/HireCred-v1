@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import String, Text, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB, TSVECTOR
 from src.database import Base
 
 
@@ -21,6 +21,7 @@ class Profile(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(500))
     cv_file_path: Mapped[str | None] = mapped_column(String(500))
     cv_analysis: Mapped[dict | None] = mapped_column(JSONB)
+    search_tsv: Mapped[object | None] = mapped_column(TSVECTOR, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

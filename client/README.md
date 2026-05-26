@@ -1,6 +1,6 @@
 # HireCred — Frontend
 
-**Last updated: 2026-05-18**
+**Last updated: 2026-05-27**
 
 React 18 + TypeScript + Vite + TailwindCSS v4 frontend for the HireCred trust platform.
 
@@ -80,5 +80,7 @@ Default: `http://localhost:8000` (hardcoded in `src/lib/api.ts`).
 - All icons use **lucide-react** — no raw SVG tags in JSX
 - Password inputs suppress browser native eye toggle via CSS (`::-ms-reveal`, `::-webkit-credentials-auto-fill-button`)
 - Score polling: `refetchInterval: 3000` until score appears, then stops
-- Background scoring: all saves show "Score updating in background…" toast; score appears automatically
+- Background scoring: all saves show "Score updating in background…" toast; score appears automatically via TanStack Query polling
 - Portfolio "tech_stack" field is labelled "Skills" in both editor and profile view
+- Register endpoint now returns `{access_token, user}` — user is logged in immediately after registration (no separate login needed)
+- Search requires minimum 2 characters; validated client-side (toast) and server-side (400)

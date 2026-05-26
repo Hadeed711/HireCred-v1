@@ -85,6 +85,19 @@ def validate_bio(bio: str) -> ValidationError | None:
 
 # ── Experience validation ─────────────────────────────────────────────────────
 
+def _normalize_date(s: str) -> str:
+    """Normalize 'YYYY-M' to 'YYYY-MM' so lexicographic comparison is correct.
+    Without this, '2024-9' > '2024-10' (September appears after October), which is wrong.
+    """
+    if not s:
+        return s
+    parts = s.split('-')
+    if len(parts) == 2:
+        year, month = parts
+        return f"{year}-{month.zfill(2)}"
+    return s
+
+
 def validate_experience_list(entries: list[dict]) -> list[ValidationError]:
     errors: list[ValidationError] = []
     for i, entry in enumerate(entries):
@@ -92,20 +105,20 @@ def validate_experience_list(entries: list[dict]) -> list[ValidationError]:
         if desc and len(desc) < 40:
             errors.append(ValidationError(
                 f"experience[{i}].description",
-                f"Experience description must be at least 40 characters or left empty.",
+                "Experience description must be at least 40 characters or left empty.",
             ))
 
         company = (entry.get("company") or "").strip().lower()
-        start = entry.get("start_date") or ""
-        end = "9999-99" if entry.get("current") else (entry.get("end_date") or "9999-99")
+        start = _normalize_date(entry.get("start_date") or "")
+        end = "9999-99" if entry.get("current") else _normalize_date(entry.get("end_date") or "9999-99")
 
         for j, other in enumerate(entries):
             if j >= i:
                 continue
             other_company = (other.get("company") or "").strip().lower()
             if other_company and other_company == company:
-                o_start = other.get("start_date") or ""
-                o_end = "9999-99" if other.get("current") else (other.get("end_date") or "9999-99")
+                o_start = _normalize_date(other.get("start_date") or "")
+                o_end = "9999-99" if other.get("current") else _normalize_date(other.get("end_date") or "9999-99")
                 if start <= o_end and o_start <= end:
                     errors.append(ValidationError(
                         f"experience[{i}]",

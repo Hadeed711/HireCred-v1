@@ -93,7 +93,7 @@ async def check_url(url: str) -> dict:
     page_title: str | None = None
     title_suspicious = False
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True, verify=False) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True, verify=True, max_redirects=10) as client:
         # HEAD first (fast)
         try:
             resp = await client.head(url, headers=headers)
@@ -157,6 +157,18 @@ async def check_url(url: str) -> dict:
             result = {
                 "reachable": False, "status_code": None,
                 "note": "Could not connect — domain may not exist",
+                "page_title": None, "title_suspicious": False,
+            }
+        except httpx.ConnectTimeout:
+            result = {
+                "reachable": False, "status_code": None,
+                "note": "Connection timed out",
+                "page_title": None, "title_suspicious": False,
+            }
+        except httpx.RemoteProtocolError:
+            result = {
+                "reachable": False, "status_code": None,
+                "note": "SSL or protocol error — certificate may be invalid",
                 "page_title": None, "title_suspicious": False,
             }
         except httpx.TimeoutException:

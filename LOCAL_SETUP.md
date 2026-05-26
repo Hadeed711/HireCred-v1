@@ -1,6 +1,6 @@
 # HireCred — Local Setup Guide
 
-**Last updated: 2026-05-18**
+**Last updated: 2026-05-27**
 
 ---
 
@@ -38,6 +38,8 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
+
+> `requirements.txt` includes `slowapi==0.1.9` for rate limiting on auth endpoints. If you see `ModuleNotFoundError: No module named 'slowapi'`, re-run pip install.
 
 Create a `.env` file in `server/`:
 ```env
@@ -114,10 +116,10 @@ This is restricted to emails listed in `SUPER_ADMIN_EMAILS` in `.env`.
 
 ## Scoring Behaviour
 
-- Score computation is **always asynchronous** — profile saves, CV uploads, and proof signal changes return immediately.
-- The score updates in the background (typically 5–30s depending on Ollama speed).
-- If Ollama is unavailable, a rule-based fallback runs instead.
-- Profile owners can click **"Refresh"** on the HireCred Score widget to manually trigger recomputation.
+- Score computation is **always asynchronous** — profile saves, CV uploads, and proof signal changes return immediately (< 1s).
+- The score updates in the background (typically 5–30s depending on Ollama speed). The ScoreWidget polls automatically.
+- If Ollama is unavailable or times out (10s limit), a rule-based fallback runs instead.
+- Profile owners can click **"Refresh"** on the HireCred Score widget to manually trigger recomputation via `POST /api/profile/{id}/rescore`.
 
 ---
 
@@ -125,7 +127,7 @@ This is restricted to emails listed in `SUPER_ADMIN_EMAILS` in `.env`.
 
 - PDF only, max 5 MB.
 - The file is stored at `server/uploads/cv/{user_id}.pdf`.
-- No text extraction or AI analysis runs on the CV — only the presence of a CV is passed to the scoring LLM.
+- No text extraction or AI analysis runs on the CV — only the presence of a CV (yes/no) is passed to the scoring LLM as a binary signal contributing up to 12 pts.
 
 ---
 
@@ -135,7 +137,8 @@ This is restricted to emails listed in `SUPER_ADMIN_EMAILS` in `.env`.
 |------|---------|
 | `server/.env` | DB URL, JWT secret, Ollama config, super admin emails |
 | `server/src/config.py` | Pydantic settings (reads .env) |
-| `server/src/database.py` | Async SQLAlchemy engine (pool_pre_ping, pool_recycle) |
+| `server/src/database.py` | Async SQLAlchemy engine (pool_pre_ping, pool_recycle, pool_size=10, max_overflow=20) |
+| `server/src/rate_limiter.py` | Shared slowapi Limiter instance (imported by routers) |
 | `server/alembic.ini` | Alembic migration config |
 | `client/.env` (optional) | `VITE_API_URL` if backend not on localhost:8000 |
 

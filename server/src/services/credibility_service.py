@@ -1,9 +1,11 @@
+import asyncio
 import uuid
 import logging
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.database import AsyncSessionLocal
 from src.models.credibility_score import CredibilityScore, FraudRisk
@@ -11,6 +13,9 @@ from src.models.profile import Profile
 from src.ai.credibility_prompt import evaluate_profile
 from src.services.authenticity_service import check_profile_authenticity, compute_url_warnings
 from src.routers.leaderboard import invalidate_leaderboard_cache
+
+# Limit concurrent outbound URL checks to avoid exhausting the connection pool
+_URL_CHECK_SEM = asyncio.Semaphore(5)
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +91,12 @@ async def _check_urls_async(portfolio: list[dict], proof_signals: list[dict]) ->
         if u:
             urls_to_check.append((sig.get("title", "proof signal"), u))
 
-    import asyncio
+    async def _guarded_check(url: str) -> dict:
+        async with _URL_CHECK_SEM:
+            return await check_url(url)
+
     results = await asyncio.gather(
-        *[check_url(u) for _, u in urls_to_check],
+        *[_guarded_check(u) for _, u in urls_to_check],
         return_exceptions=True,
     )
     for (label, url), result in zip(urls_to_check, results):
@@ -179,7 +187,7 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
 
             # ── Step 5: AI scoring (with full evidence context) ───────────────
             try:
-                score_data = await evaluate_profile(profile_data)
+                score_data = await asyncio.wait_for(evaluate_profile(profile_data), timeout=10.0)
                 if score_data.get("credibility_score") == 0 and not score_data.get("strengths"):
                     raise RuntimeError("AI returned a zero score with no strengths")
             except Exception as exc:
@@ -215,40 +223,30 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
             else:
                 fraud_risk = FraudRisk.low
 
-            # ── Step 9: Upsert CredibilityScore ───────────────────────────────
-            score_result = await db.execute(
-                select(CredibilityScore).where(CredibilityScore.user_id == user_id)
-            )
-            score_row = score_result.scalar_one_or_none()
-
-            if score_row:
-                score_row.score = score_data["credibility_score"]
-                score_row.strengths = score_data.get("strengths", [])
-                score_row.risks = score_data.get("risks", [])
-                score_row.fraud_risk = fraud_risk
-                score_row.fraud_flags = fraud_flags
-                score_row.is_suspicious = is_suspicious
-                score_row.authenticity_flags = auth_result["flags"]
-                score_row.cv_match_score = None
-                score_row.cv_match_warnings = []
-                score_row.url_warnings = all_url_warnings
-                score_row.computed_at = datetime.utcnow()
-            else:
-                score_row = CredibilityScore(
-                    user_id=user_id,
-                    score=score_data["credibility_score"],
-                    strengths=score_data.get("strengths", []),
-                    risks=score_data.get("risks", []),
-                    fraud_risk=fraud_risk,
-                    fraud_flags=fraud_flags,
-                    is_suspicious=is_suspicious,
-                    authenticity_flags=auth_result["flags"],
-                    cv_match_score=None,
-                    cv_match_warnings=[],
-                    url_warnings=all_url_warnings,
+            # ── Step 9: Atomic upsert CredibilityScore ────────────────────────
+            upsert_values = {
+                "user_id": user_id,
+                "score": score_data["credibility_score"],
+                "strengths": score_data.get("strengths", []),
+                "risks": score_data.get("risks", []),
+                "fraud_risk": fraud_risk,
+                "fraud_flags": fraud_flags,
+                "is_suspicious": is_suspicious,
+                "authenticity_flags": auth_result["flags"],
+                "cv_match_score": None,
+                "cv_match_warnings": [],
+                "url_warnings": all_url_warnings,
+                "computed_at": datetime.utcnow(),
+            }
+            upsert_stmt = (
+                pg_insert(CredibilityScore)
+                .values(**upsert_values)
+                .on_conflict_do_update(
+                    index_elements=["user_id"],
+                    set_={k: v for k, v in upsert_values.items() if k != "user_id"},
                 )
-                db.add(score_row)
-
+            )
+            await db.execute(upsert_stmt)
             await db.commit()
             invalidate_leaderboard_cache()
             logger.info(

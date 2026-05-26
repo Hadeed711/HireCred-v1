@@ -1,6 +1,6 @@
 # HireCred-v1 — Project Understanding
 
-**Last updated: 2026-05-18**
+**Last updated: 2026-05-27**
 
 ## The Core Problem
 
@@ -129,13 +129,19 @@ Clients write freeform feedback. Ollama extracts:
 
 Fraud detection runs on the full set of appreciations — flags suspiciously generic, uniform, or templated reviews.
 
-### 7. Intent-Based Search
-Natural language queries ("reliable React developer with startup experience") parsed by Ollama. Three-tier strategy:
-1. Profession exact match
-2. Skill overlap
-3. Domain semantic fallback
+### 7. Intent-Based Search (Scalable to 1M+ profiles)
+Natural language queries ("reliable React developer with startup experience") parsed by Ollama or local heuristics.
 
-Ranking: 40% credibility score + 35% skill match + 15% appreciation ratings + 10% profile views.
+**Architecture:** SQL-first, Python-rank
+- All filtering happens inside PostgreSQL using a stored `search_tsv` `TSVECTOR` column on `profiles` (populated from `title + bio + skills`), kept up-to-date by the `profiles_search_tsv_trigger` DB trigger, and indexed with a plain GIN index (`ix_profiles_fts`)
+- `pg_trgm` extension + trigram GIN index on `title` enable fuzzy matching (handles typos like "develoer" → "developer")
+- Three SQL search stages: FTS on `search_tsv` → trigram fuzzy → ILIKE (each with hard LIMIT)
+- Never loads more than 200 rows into Python; Python ranks the pre-filtered set
+- Returns empty results with a message when nothing matches — no random fallback
+
+**Ranking formula:** 40% credibility score + 35% skill match + 15% appreciation ratings + 10% profile views.
+
+**No results:** Returns empty list + `"message"` field explaining no candidates were found. No random unrelated profiles returned.
 
 ### 8. Trust Leaderboard
 Top 20 candidates ranked by a combined metric. High fraud risk → excluded. Medium fraud risk → appreciation weight halved. Cached 2 minutes.
@@ -165,7 +171,7 @@ Simple conversation threads between any two authenticated users. Supports text a
 | Table | Key Fields |
 |-------|-----------|
 | `users` | id, uid, email, role, is_admin, is_active |
-| `profiles` | user_id, bio, title, skills, experience, portfolio, cv_file_path, cv_analysis (null — not used) |
+| `profiles` | user_id, bio, title, skills, experience, portfolio, cv_file_path, cv_analysis (null — not used), search_tsv (tsvector — maintained by trigger) |
 | `credibility_scores` | user_id, score, strengths, risks, fraud_risk, is_suspicious, authenticity_flags, cv_match_score (null), cv_match_warnings (empty), url_warnings |
 | `proof_signals` | profile_id, signal_type, title, url, file_path |
 | `appreciations` | to_user_id, from_user_id, skill_rating, communication_rating, reliability_rating |
@@ -178,7 +184,7 @@ Simple conversation threads between any two authenticated users. Supports text a
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/auth/register` | Register (candidate/client) |
+| POST | `/api/auth/register` | Register (candidate/client) → returns `{access_token, user}` immediately |
 | POST | `/api/auth/login` | Login → JWT |
 | GET | `/api/auth/me` | Current user (includes is_admin) |
 | GET | `/api/profile/{uid}` | View profile |
@@ -221,3 +227,23 @@ Simple conversation threads between any two authenticated users. Supports text a
 | Score display + refresh button | `client/src/components/profile/ScoreWidget.tsx` |
 | Profile view + report button | `client/src/pages/ProfileView.tsx` |
 | DB connection pool config | `server/src/database.py` |
+| Scalable search service | `server/src/services/search_service.py` |
+| Rate limiter (shared) | `server/src/rate_limiter.py` |
+| Search router | `server/src/routers/search.py` |
+
+---
+
+## Security & Production Notes
+
+| Concern | How It's Handled |
+|---------|-----------------|
+| SQL injection | SQLAlchemy parameterized queries throughout |
+| Passwords | bcrypt hashing |
+| Auth | JWT (HS256), 7-day expiry |
+| Rate limiting | slowapi on `/auth/login` (10/min) and `/auth/register` (5/min) |
+| CORS | Whitelisted origins + specific methods/headers (no `*`) |
+| Email enumeration | `owner_email` hidden from public profile responses |
+| File upload safety | MIME type + size validation on server and client |
+| URL verification | SSL enforced (`verify=True`); trusted domain skip list |
+| Fraud detection | AI analysis of appreciation patterns; conservative default on AI failure |
+| Concurrency | Atomic PostgreSQL upsert for credibility scores; asyncio.Lock on leaderboard cache |

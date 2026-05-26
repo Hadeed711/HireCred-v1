@@ -74,14 +74,14 @@ export default function Inbox() {
   const { data: conversations, isLoading: convsLoading } = useQuery<Conversation[]>({
     queryKey: ['conversations'],
     queryFn: () => api.get('/messages/conversations').then((r) => r.data),
-    refetchInterval: 5000,
+    refetchInterval: () => document.hidden ? false : 5000,
   })
 
   const { data: thread } = useQuery<MessageItem[]>({
     queryKey: ['thread', otherUserId],
     queryFn: () => api.get(`/messages/conversation/${otherUserId}`).then((r) => r.data),
     enabled: !!otherUserId,
-    refetchInterval: 3000,
+    refetchInterval: () => document.hidden ? false : 3000,
   })
 
   useEffect(() => {
@@ -95,8 +95,19 @@ export default function Inbox() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [thread])
 
+  // Revoke blob URL when it changes or component unmounts to prevent memory leak
+  useEffect(() => {
+    return () => {
+      if (imagePreview) URL.revokeObjectURL(imagePreview)
+    }
+  }, [imagePreview])
+
   // When user picks an image — upload immediately and store URL
   async function handleImagePick(file: File) {
+    const MAX_SIZE = 5 * 1024 * 1024
+    if (file.size > MAX_SIZE) { toast.error('Image must be under 5 MB'); return }
+    if (!file.type.startsWith('image/')) { toast.error('Only image files are allowed'); return }
+
     setImageFile(file)
     setImagePreview(URL.createObjectURL(file))
     setUploadingImg(true)

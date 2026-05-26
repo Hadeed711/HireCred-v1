@@ -32,7 +32,7 @@ MAX_CV_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 
-def _build_profile_response(profile: Profile) -> ProfileResponse:
+def _build_profile_response(profile: Profile, is_owner: bool = False) -> ProfileResponse:
     cv_url = f"/uploads/cv/{profile.cv_file_path}" if profile.cv_file_path else None
     return ProfileResponse(
         id=profile.id,
@@ -51,7 +51,7 @@ def _build_profile_response(profile: Profile) -> ProfileResponse:
         created_at=profile.created_at,
         updated_at=profile.updated_at,
         owner_name=profile.user.full_name,
-        owner_email=profile.user.email,
+        owner_email=profile.user.email if is_owner else None,
         owner_role=profile.user.role.value,
         owner_uid=profile.user.uid,
     )
@@ -127,7 +127,8 @@ async def get_profile(
         .options(selectinload(Profile.proof_signals), selectinload(Profile.user))
     )
     profile = result.scalar_one()
-    return _build_profile_response(profile)
+    is_owner = viewer is not None and viewer.id == user_id
+    return _build_profile_response(profile, is_owner=is_owner)
 
 
 @router.put("/{user_id}", response_model=ProfileResponse)
@@ -176,7 +177,7 @@ async def update_profile(
 
     asyncio.create_task(compute_and_save_score(user_id))
 
-    response = _build_profile_response(profile)
+    response = _build_profile_response(profile, is_owner=True)
     if validation_warnings:
         from fastapi.responses import JSONResponse
         resp_data = response.model_dump(mode="json")

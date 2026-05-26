@@ -43,8 +43,8 @@ async def run_fraud_detection(user_id: uuid.UUID) -> None:
             try:
                 fraud_result = await analyze_appreciations(appreciation_data)
             except Exception:
-                logger.warning("Fraud AI unavailable for user %s, defaulting to low risk", user_id)
-                fraud_result = {"fraud_risk": "low", "flags": []}
+                logger.warning("Fraud AI unavailable for user %s, defaulting to medium risk", user_id)
+                fraud_result = {"fraud_risk": "medium", "flags": ["AI analysis unavailable — manual review recommended"]}
             risk_level = fraud_result["fraud_risk"]
             flags = fraud_result["flags"]
 

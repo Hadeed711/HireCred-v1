@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
 import { Bot, Search, AlertTriangle, BriefcaseBusiness, Trophy } from 'lucide-react'
@@ -31,6 +32,7 @@ interface SearchResponse {
   parsed: ParsedIntent
   results: CandidateResult[]
   search_tier_used: string
+  message?: string
 }
 
 function scoreStyle(score: number) {
@@ -126,7 +128,7 @@ export default function SearchPage() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const q = query.trim()
-    if (!q) return
+    if (q.length < 2) { toast.error('Search query must be at least 2 characters'); return }
     mutate(q)
   }
 
@@ -256,11 +258,22 @@ export default function SearchPage() {
           <>
             {data.results.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
-                <Search className="mx-auto mb-4 h-10 w-10 text-gray-400" />
-                <p className="text-gray-700 font-semibold">No candidates found</p>
-                <p className="text-gray-400 text-sm mt-1.5 max-w-xs mx-auto">
-                  Try a broader description, or different keywords like the technology name.
+                <Search className="mx-auto mb-4 h-10 w-10 text-gray-300" />
+                <p className="text-gray-800 font-semibold text-base">No candidates found</p>
+                <p className="text-gray-400 text-sm mt-2 max-w-xs mx-auto leading-relaxed">
+                  {data.message ?? 'Try a broader description, or different keywords like the technology name.'}
                 </p>
+                <div className="mt-6 flex flex-wrap justify-center gap-2">
+                  {EXAMPLE_QUERIES.map((tip) => (
+                    <button
+                      key={tip}
+                      onClick={() => runQuery(tip)}
+                      className="text-xs px-3.5 py-1.5 bg-gray-50 border border-gray-200 rounded-full text-gray-500 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                    >
+                      {tip}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : (
               <div className="space-y-3">

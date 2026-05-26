@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type AxiosError } from 'axios'
 import { queryClient } from './queryClient'
 
 const api = axios.create({
@@ -23,5 +23,13 @@ api.interceptors.response.use(
     return Promise.reject(err)
   }
 )
+
+export function getApiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    return (err as AxiosError<{ detail?: string }>).response?.data?.detail ?? fallback
+  }
+  if (err instanceof Error) return err.message
+  return fallback
+}
 
 export default api

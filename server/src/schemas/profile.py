@@ -76,7 +76,7 @@ class ProfileResponse(BaseModel):
     updated_at: datetime
     # denormalised owner fields
     owner_name: str
-    owner_email: str
+    owner_email: str | None = None  # only returned to the profile owner, not public viewers
     owner_role: str
     owner_uid: int | None = None
 

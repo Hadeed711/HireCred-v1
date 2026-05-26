@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,5 +49,10 @@ async def search(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    result = await search_candidates(body.query.strip(), db)
+    q = body.query.strip()
+    if len(q) < 2:
+        raise HTTPException(status_code=400, detail="Search query must be at least 2 characters.")
+    if len(q) > 500:
+        raise HTTPException(status_code=400, detail="Search query must be 500 characters or fewer.")
+    result = await search_candidates(q, db)
     return result

@@ -371,6 +371,13 @@ export default function ProfileEditor() {
       }
     }
 
+    if (signalType === 'screenshot' && signalFile) {
+      const MAX_SIZE = 5 * 1024 * 1024
+      if (signalFile.size > MAX_SIZE) { toast.error('File must be under 5 MB'); return }
+      const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
+      if (!allowed.includes(signalFile.type)) { toast.error('Only images and PDFs are allowed'); return }
+    }
+
     setAddingSignal(true)
     try {
       if (signalType === 'screenshot' && signalFile) {
@@ -403,6 +410,7 @@ export default function ProfileEditor() {
   }
 
   async function handleCvRemove() {
+    if (!window.confirm('Delete your CV? This cannot be undone.')) return
     try {
       await api.delete(`/profile/${user?.id}/cv`)
       qc.invalidateQueries({ queryKey: ['profile', user?.id] })
@@ -415,6 +423,9 @@ export default function ProfileEditor() {
 
   async function handleCvUpload() {
     if (!cvFile) return
+    const MAX_SIZE = 5 * 1024 * 1024
+    if (cvFile.size > MAX_SIZE) { toast.error('CV must be under 5 MB'); return }
+    if (cvFile.type !== 'application/pdf') { toast.error('Only PDF files are accepted'); return }
     setCvUploading(true)
     try {
       const fd = new FormData()
