@@ -1,6 +1,6 @@
 # HireCred-v1 — Complete Project Guide
 
-**Last updated: 2026-05-18**
+**Last updated: 2026-06-01**
 
 > Single source of truth for architecture, features, file locations, and data flows.
 > For quick local setup see `LOCAL_SETUP.md`. For testing see `TESTING_GUIDE.md`.
@@ -44,12 +44,12 @@ hireCred-v1/
 │           └── authStore.ts          # Zustand auth (user includes is_admin)
 │
 └── server/                      # FastAPI backend
-    ├── main.py                  # app entrypoint + all router registration
+    ├── main.py                  # app entrypoint + lifespan DB warmup + 503 exception handler + all router registration
     ├── requirements.txt         # includes pdfplumber==0.11.4 (installed)
     ├── alembic/versions/        # 6 migration files (latest: f6g7h8i9j012)
     └── src/
         ├── config.py            # Settings (DB, JWT, Ollama host/model, super_admin_emails)
-        ├── database.py          # async SQLAlchemy engine (pool_pre_ping, pool_recycle=1800)
+        ├── database.py          # async SQLAlchemy engine (pool_pre_ping, pool_recycle=1800, ping_db() cold-start warmup)
         ├── models/
         │   ├── user.py          # User — id, uid, email, role, is_admin
         │   ├── profile.py       # Profile — bio, skills, experience, portfolio, cv_file_path

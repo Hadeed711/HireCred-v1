@@ -1,6 +1,6 @@
 # HireCred-v1 — Build Roadmap & Status
 
-**Last updated: 2026-05-27**  
+**Last updated: 2026-06-01**  
 **Stack:** React + Vite + TypeScript | Python + FastAPI | Neon PostgreSQL | Ollama (qwen2.5:3b local LLM)
 
 ---
@@ -103,6 +103,14 @@
 - [x] `main.py`: added `slowapi` rate limiting (login: 10/min, register: 5/min)
 - [x] `requirements.txt`: added `slowapi==0.1.9`
 
+---
+
+## Phase 6 — Reliability Fix (DONE — 2026-06-01)
+
+- [x] **Neon cold-start fix**: `database.py` now exposes `ping_db(retries=6)` with exponential backoff (1 → 2 → 4 → 8 → 16 → 30s)
+- [x] **Startup warmup**: `main.py` lifespan context calls `ping_db()` before the server accepts any requests — database is awake before first user hits the API
+- [x] **Global exception handler**: `unhandled_exception_handler()` walks the full exception chain; asyncpg `InternalServerError` + `TimeoutError` now return HTTP 503 ("Database temporarily unavailable — please try again in a few seconds") instead of crashing the ASGI process with a 500
+
 ### Frontend Fixes
 - [x] `api.ts`: added `getApiError()` unified error handler utility
 - [x] `ProfileEditor.tsx`: file size (5 MB) + MIME type validation before upload
@@ -113,26 +121,26 @@
 
 ---
 
-## Phase 6 — Planned (Not Yet Started)
+## Phase 7 — Planned (Not Yet Started)
 
-### 6.1 OAuth Proof Verification
+### 7.1 OAuth Proof Verification
 - [ ] GitHub OAuth: verify ownership of GitHub account linked in proof signals
 - [ ] Create-a-file proof of possession for custom portfolio domains
 
-### 6.2 Duplicate Detection (Cross-Profile)
+### 7.2 Duplicate Detection (Cross-Profile)
 - [ ] Bio similarity fingerprinting across all profiles (difflib or embeddings)
 - [ ] Flag copy-pasted bios from other users
 
-### 6.3 Score Transparency
+### 7.3 Score Transparency
 - [ ] Score breakdown UI: show per-criterion scores (completeness/alignment/portfolio/etc.)
 - [ ] Score history chart (track improvement over time)
 
-### 6.4 Hirer Features
+### 7.4 Hirer Features
 - [ ] Saved candidates list
 - [ ] Hirer-side review/rating of candidates post-hire
 - [ ] Advanced search filters (experience level, location, score range)
 
-### 6.5 Notifications
+### 7.5 Notifications
 - [ ] In-app notifications: new appreciation, new message, score change
 - [ ] Email digest (weekly summary)
 

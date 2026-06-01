@@ -1,6 +1,6 @@
 # HireCred-v1 — Complete Testing Guide
 
-**Last updated: 2026-05-18**
+**Last updated: 2026-06-01**
 
 ---
 
@@ -14,6 +14,8 @@ uvicorn main:app --reload --port 8000
 ```
 Backend: **http://localhost:8000**  
 Swagger docs: **http://localhost:8000/docs**
+
+> **Neon cold-start:** On first startup you may see log lines like `DB ping attempt 1/6 failed… retrying`. Wait for `Database connection established.` before testing — this is the server waking up Neon's free-tier database. Usually takes 5–30 seconds.
 
 ### Frontend (React + Vite)
 ```powershell

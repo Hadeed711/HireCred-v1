@@ -1,6 +1,6 @@
 # HireCred-v1 — Project Understanding
 
-**Last updated: 2026-05-27**
+**Last updated: 2026-06-01**
 
 ## The Core Problem
 
@@ -247,3 +247,4 @@ Simple conversation threads between any two authenticated users. Supports text a
 | URL verification | SSL enforced (`verify=True`); trusted domain skip list |
 | Fraud detection | AI analysis of appreciation patterns; conservative default on AI failure |
 | Concurrency | Atomic PostgreSQL upsert for credibility scores; asyncio.Lock on leaderboard cache |
+| Neon cold-start | `ping_db()` warmup on startup (6 retries, exponential backoff); asyncpg errors return HTTP 503 instead of crashing |

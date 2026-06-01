@@ -1,6 +1,9 @@
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -11,12 +14,51 @@ from src.routers import auth, profile, proof_signals, appreciation, search, lead
 from src.routers import validate
 from src.routers.reports import reports_router, admin_router
 
+logger = logging.getLogger(__name__)
+
 UPLOADS_DIR = Path(__file__).parent / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 (UPLOADS_DIR / "cv").mkdir(exist_ok=True)
 (UPLOADS_DIR / "messages").mkdir(exist_ok=True)
 
-app = FastAPI(title="HireCred API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from src.database import ping_db
+    logger.info("Warming up database connection (Neon cold-start)...")
+    ok = await ping_db(retries=6)
+    if not ok:
+        logger.warning("Database warmup failed — first requests may be slow or fail.")
+    yield
+
+
+app = FastAPI(title="HireCred API", version="1.0.0", lifespan=lifespan)
+
+
+def _is_db_connection_error(exc: BaseException) -> bool:
+    """Walk the exception chain looking for asyncpg or timeout errors."""
+    seen = set()
+    current = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        name = type(current).__name__
+        module = type(current).__module__ or ""
+        if "asyncpg" in module or name in ("TimeoutError", "ConnectionRefusedError"):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    if _is_db_connection_error(exc):
+        logger.warning("DB connection error on %s: %s", request.url.path, exc)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Database temporarily unavailable — please try again in a few seconds."},
+        )
+    logger.exception("Unhandled error on %s", request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

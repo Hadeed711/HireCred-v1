@@ -1,9 +1,100 @@
 # HireCred-v1 — Functionality Pipeline Reference
 
-**Last updated: 2026-05-27**
+**Last updated: 2026-06-01**
 
 Every feature documented end-to-end: frontend → API → router → service → model/DB → response.
 File names are exact paths relative to repo root. Purpose of each step is explained inline.
+
+---
+
+## Plain English Guide — What This App Actually Does
+
+> Read this section if you're non-technical or want the big picture before diving into details.
+
+**HireCred is a trust platform for hiring.** Think of it like a verified LinkedIn — but instead of just taking candidates at their word, the system actually checks whether their profile holds up.
+
+Here's what happens when you use it:
+
+---
+
+### "I'm a candidate — what does HireCred do for me?"
+
+1. **You create a profile** — your bio, skills, job history, portfolio links, and proof signals (GitHub, screenshots, client references). You can also upload your CV as a PDF.
+
+2. **The system scores you automatically** — a number from 0 to 100 called the **HireCred Score**. This score is not based on your word; it's based on:
+   - Does your profile look real, complete, and consistent?
+   - Do your links actually work?
+   - Does your claimed experience match your listed skills?
+   - Have clients written you genuine appreciations?
+
+3. **Scoring happens in the background** — you save your profile and it responds in under a second. The score is computed behind the scenes (usually within 5–30 seconds) and appears automatically on your profile.
+
+4. **Clients leave appreciations** — when a client writes feedback, an AI reads it and extracts structured ratings for skill, communication, and reliability. These feed into your score.
+
+5. **Your score updates when things change** — if you add a proof signal, upload a CV, or get a new appreciation, the score is recomputed automatically.
+
+---
+
+### "I'm a hirer — how do I find good candidates?"
+
+1. **Search in plain English** — type something like "reliable React developer with startup experience." The system understands what you mean, extracts the skills and role you're looking for, and runs an intelligent database search.
+
+2. **Results are ranked by trust** — candidates with higher HireCred Scores, better appreciation ratings, and more proof signals appear first. Not just whoever filled in the most fields.
+
+3. **You can see what the AI found suspicious** — each profile shows authenticity flags (e.g., "bio under 15 words", "dead portfolio link") and URL warnings so you know the score is honest.
+
+4. **You can report a profile** — if something looks wrong, you can report it. Admins review reports and can mark a profile as suspicious, which caps its score.
+
+5. **Trust Leaderboard** — the top 20 most trustworthy candidates are ranked on a leaderboard updated every 2 minutes.
+
+---
+
+### "What checks does the system do automatically?"
+
+Every time a profile is saved, the system runs **16 authenticity checks** in the background:
+
+| What it looks for | Example that triggers it |
+|-------------------|--------------------------|
+| Fake-looking name | "Test User", "Admin123", "John Doe" |
+| Throwaway email address | mailinator.com, guerrillamail.com |
+| Generic bio buzzwords | "guru", "ninja", "rockstar", "unicorn" |
+| Bio that's too short | Less than 15 words |
+| Science fiction content | "Alien startup", "intergalactic marketing firm" |
+| Fictional location | "Mars Colony", "Moon Base Alpha", "Sector 9" |
+| Absurd job title | "Supreme Overlord of Code", "Ultra Creative Pixel Wizard" |
+| Impossible numbers | "999 years of experience", "5000% sales increase" |
+| Future experience dates | End year listed as 3020, 2099, etc. |
+| Made-up company names | "Galaxy Banana Corp", "Moonlight Sandwich Studio" |
+| Joke skills | "Coffee Drinking", "Meme Design", "Nap Champion" |
+| Copy-pasted job descriptions | Same text used for multiple roles |
+| All portfolio links on one domain | Suggests self-hosting fake projects |
+| Portfolio descriptions are identical | Copy-paste detected |
+| Too many skills listed | More than 25 is suspicious |
+| Mostly non-technical skills | "Breathing", "Walking", "Looking busy" |
+| Tech title but no tech skills | Says "developer" but lists no coding skills |
+
+Each check applies a penalty. High penalty → score is capped low, profile is marked suspicious.
+
+---
+
+### "What happens when I click a portfolio link in my profile?"
+
+The system automatically checks every URL you add:
+
+1. **Well-known sites** (GitHub, LinkedIn, etc.) are trusted and not checked — no network request needed.
+2. **Unknown URLs** get a 4-second HTTP request. If the page doesn't respond → flagged.
+3. **Even if the page loads**, the system reads the page title. If it says things like "Domain for Sale", "404 Not Found", "Coming Soon", or "Parked Domain" → flagged as dead/fake.
+4. **Each bad URL** costs 6 points off your score (max −18 total).
+
+---
+
+### "What is the database and why does the app sometimes take a second to start?"
+
+The database is hosted on **Neon** — a serverless PostgreSQL service. On the free plan, the database **goes to sleep** after a period of inactivity to save resources.
+
+When you restart the server, the app now **wakes the database up before accepting requests** — it sends a test query and retries up to 6 times with increasing delays. This means the first few seconds after startup may show warmup logs, but by the time any real user hits the API, the database is ready.
+
+If the database is still waking up and a request arrives anyway, the API returns a clear **"503 — Database temporarily unavailable"** message instead of a confusing 500 crash.
 
 ---
 
@@ -505,15 +596,18 @@ Splits date string on `-`, pads month with `zfill(2)`: `"2024-9"` → `"2024-09"
 | `server/main.py` | `app.state.limiter = limiter` + `SlowAPIMiddleware` + `RateLimitExceeded` handler |
 | Storage | In-memory (no Redis required). Free. Resets on server restart |
 
-### Database Connection Pool
+### Database Connection Pool & Cold-Start Handling
 
-| File | Setting | Purpose |
-|------|---------|---------|
+| File | Setting / Mechanism | Purpose |
+|------|---------------------|---------|
 | `server/src/database.py` | `pool_size=10` | Max 10 persistent connections |
 | `server/src/database.py` | `max_overflow=20` | Up to 20 additional connections under burst load |
 | `server/src/database.py` | `pool_timeout=30` | Wait up to 30s for a connection before raising error |
 | `server/src/database.py` | `pool_pre_ping=True` | Tests connection before use (fixes Neon idle-timeout drops) |
 | `server/src/database.py` | `pool_recycle=1800` | Recycles connections every 30 min (prevents "connection closed" errors) |
+| `server/src/database.py` | `ping_db(retries=6)` | Exponential-backoff warmup for Neon free-tier cold start (1s, 2s, 4s, 8s, 16s, 30s) |
+| `server/main.py` | `lifespan()` context manager | Calls `ping_db()` on every server startup before accepting requests |
+| `server/main.py` | `unhandled_exception_handler()` | Catches asyncpg `InternalServerError` / `TimeoutError` anywhere in the chain; returns HTTP 503 instead of crashing the ASGI process |
 
 ### Authentication & Security
 

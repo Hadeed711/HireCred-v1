@@ -1,6 +1,6 @@
 # HireCred — Local Setup Guide
 
-**Last updated: 2026-05-27**
+**Last updated: 2026-06-01**
 
 ---
 
@@ -62,7 +62,9 @@ uvicorn main:app --reload --port 8000
 
 You should see `Application startup complete.` with no errors.
 
-> **Note:** The server uses `pool_pre_ping=True` and `pool_recycle=1800` on the DB connection pool — this prevents "connection is closed" errors on long-idle Neon connections.
+> **Neon cold-start:** On startup the server automatically pings the database with exponential-backoff retries (up to 6 attempts) before accepting requests. This wakes the Neon free-tier database if it was sleeping. You will see log lines like `DB ping attempt 1/6 failed… retrying in 1s`. This is normal — the server is not broken; it is waiting for Neon to wake up. Within a few seconds you will see `Database connection established.` and the server becomes fully ready.
+>
+> If the database is still waking up when a request arrives, the API returns HTTP 503 ("Database temporarily unavailable — please try again in a few seconds") instead of a crash.
 
 ---
 

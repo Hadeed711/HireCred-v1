@@ -1,6 +1,11 @@
+import asyncio
+import logging
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import text
 from src.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _make_async_url(url: str) -> tuple[str, dict]:
@@ -37,6 +42,27 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 class Base(DeclarativeBase):
     pass
+
+
+async def ping_db(retries: int = 6) -> bool:
+    """Ping DB with exponential backoff. Handles Neon free-tier cold-start delays."""
+    for attempt in range(retries):
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info("Database connection established.")
+            return True
+        except Exception as exc:
+            if attempt < retries - 1:
+                wait = min(2 ** attempt, 30)
+                logger.warning(
+                    "DB ping attempt %d/%d failed (%s). Retrying in %ds...",
+                    attempt + 1, retries, exc, wait,
+                )
+                await asyncio.sleep(wait)
+            else:
+                logger.error("DB unreachable after %d attempts: %s", retries, exc)
+    return False
 
 
 async def get_db() -> AsyncSession:
