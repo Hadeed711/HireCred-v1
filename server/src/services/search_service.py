@@ -440,6 +440,45 @@ def _profession_title_exact(profile: Profile, profession_keywords: list[str]) ->
     return any(kw in title_lower for kw in profession_keywords)
 
 
+def _is_recognized_term(term: str) -> bool:
+    """A term is 'recognized' when it is a known skill or a multi-word phrase.
+
+    Loose single words extracted as a last-resort fallback (e.g. 'space',
+    'explorer' from "a space explorer") are NOT recognized and must be matched
+    more strictly to avoid prose-coincidence false positives.
+    """
+    return term in _KNOWN_SKILLS or ' ' in term
+
+
+def _term_in_text(term: str, text: str) -> bool:
+    """Substring match with a light prefix-stem so 'explorer' matches
+    'exploration'/'exploring' the way the English FTS config does."""
+    if not text or not term:
+        return False
+    if term in text:
+        return True
+    return len(term) >= 6 and term[:5] in text
+
+
+def _loose_term_anchored(profile: Profile, loose_terms: list[str], query_phrase: str) -> bool:
+    """True only when a loose query is *genuinely* about this profile.
+
+    For unrecognized queries the FTS AND-filter can match scattered bio words
+    (e.g. a backend dev whose bio mentions a "shared space" and "exploring new
+    tech"). We accept the candidate only when at least one loose term appears in
+    the title or skills, OR the full query phrase appears intact in the bio —
+    both strong signals of real relevance rather than coincidence.
+    """
+    title = (profile.title or '').lower()
+    skills_text = ' '.join(profile.skills or []).lower()
+    for term in loose_terms:
+        if _term_in_text(term, title) or _term_in_text(term, skills_text):
+            return True
+    if query_phrase and len(loose_terms) > 1:
+        return query_phrase in (profile.bio or '').lower()
+    return False
+
+
 def _rank_score(
     cred_score: float,
     skill_match_pct: float,
@@ -447,8 +486,14 @@ def _rank_score(
     profile_views: int,
     max_views: int,
     profession_exact_bonus: float = 0.0,
+    relevance_norm: float = 0.0,
 ) -> float:
-    """Composite ranking: credibility 40%, skill 35%, appreciation 15%, views 10%."""
+    """Composite ranking: credibility 40%, skill 35%, appreciation 15%, views 10%.
+
+    `relevance_norm` (0–1, the per-batch normalized FTS rank) adds up to a small
+    textual-relevance bonus so a genuinely on-topic profile out-ranks one that
+    merely shares a credibility score but matched on coincidental words.
+    """
     views_norm = (profile_views / max_views * 100) if max_views > 0 else 0
     appr_norm = avg_appr * 10  # 0–10 → 0–100
     return round(
@@ -456,7 +501,8 @@ def _rank_score(
         + skill_match_pct * 100 * 0.35
         + appr_norm * 0.15
         + views_norm * 0.10
-        + profession_exact_bonus,
+        + profession_exact_bonus
+        + relevance_norm * 12.0,
         2,
     )
 
@@ -493,6 +539,18 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
     profession_terms = _dedupe(profession_keywords + _expand_profession_terms(profession_keywords))
     all_terms = _dedupe(required_skills + profession_terms)
 
+    # A "loose" query is one where the words were extracted as a last-resort
+    # fallback (e.g. "a space explorer" → ['space','explorer']): no profession
+    # and no recognized skill. These need a precision gate so the FTS AND-filter
+    # doesn't surface profiles that matched only on scattered, coincidental words.
+    loose_terms = (
+        required_skills
+        if (required_skills and not profession_keywords
+            and not any(_is_recognized_term(s) for s in required_skills))
+        else []
+    )
+    loose_phrase = ' '.join(loose_terms)
+
     # 2. SQL-level search — never more than 200 rows enter Python
     # required_skills → hard AND filter (profile MUST have them all)
     # profession_keywords → OR filter (fallback when no skills specified)
@@ -525,6 +583,9 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
 
     # 5. Rank the ≤200 pre-filtered candidates in Python
     max_views = max((r.Profile.profile_views or 0) for r in rows) or 1
+    # Normalize the FTS rank across this batch so it can contribute a small,
+    # comparable textual-relevance bonus to the composite score.
+    max_ts_rank = max((float(getattr(r, '_ts_rank', 0) or 0) for r in rows), default=0.0) or 1.0
 
     results = []
     for row in rows:
@@ -532,11 +593,16 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
         profile: Profile = row.Profile
         cs: CredibilityScore | None = row.CredibilityScore
 
+        # Precision gate: drop coincidental matches for loose/unrecognized queries.
+        if loose_terms and not _loose_term_anchored(profile, loose_terms, loose_phrase):
+            continue
+
         cred_score = float(cs.score if cs else 0)
         candidate_skills = profile.skills or []
         appr = appr_map.get(user.id)
         avg_appr = appr['avg'] if appr else 0.0
         appr_count = appr['count'] if appr else 0
+        relevance_norm = float(getattr(row, '_ts_rank', 0) or 0) / max_ts_rank
 
         if required_skills:
             matched = _skill_overlap(candidate_skills, required_skills)
@@ -566,6 +632,7 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
             profile.profile_views or 0,
             max_views,
             profession_exact_bonus,
+            relevance_norm,
         )
 
         results.append({
@@ -583,6 +650,18 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
             ),
             'rank_score': rank,
         })
+
+    # The precision gate may have filtered out every coincidental match.
+    if not results:
+        return {
+            'parsed': parsed,
+            'results': [],
+            'search_tier_used': search_tier,
+            'message': (
+                'No candidates found matching your search. '
+                'Try different skills, a broader role title, or check spelling.'
+            ),
+        }
 
     results.sort(key=lambda r: r['rank_score'], reverse=True)
     cap = 10 if search_tier == 'domain' else 20

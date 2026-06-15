@@ -397,11 +397,22 @@ server/src/services/search_service.py → search_candidates()
     → single batched query: WHERE to_user_id IN (...) GROUP BY to_user_id
     → builds dict {user_id: {count, avg_skill, avg_comm, avg_reliability}}
         ↓
+  Precision gate (loose/unrecognized queries only):
+    → triggers when the query yielded NO profession and NO recognized skill,
+      so the words were extracted as a last resort (e.g. "a space explorer")
+    → the FTS AND-filter can match scattered, coincidental bio words, so a
+      candidate is kept ONLY if a loose term appears in its title/skills,
+      or the full query phrase appears intact in its bio
+    → drops the "matched only on prose coincidence" false positives
+    → if the gate empties the set → return the same "No candidates found" message
+        ↓
   Python ranking on ≤200 pre-filtered rows:
     → 40% credibility score
     → 35% skill match (overlap between parsed skills + profile skills)
     → 15% appreciation average
     → 10% profile views
+    → + up to 12 pts textual-relevance bonus (per-batch normalized ts_rank)
+      so a genuinely on-topic profile out-ranks one that only shares a score
     → slice to top 20 (or 10 for domain tier)
         ↓
 Response: {parsed, results[], search_tier_used, message?}

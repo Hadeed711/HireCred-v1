@@ -76,6 +76,7 @@
 - [x] Three-stage SQL search chain: FTS → trigram fuzzy → ILIKE (each with hard LIMIT)
 - [x] Never loads more than 200 rows into Python; all filtering happens in the database
 - [x] Removed "return all candidates" last-resort fallback — returns empty + message instead
+- [x] Fixed loose-query false positives ("a space explorer" surfaced an unrelated high-credibility profile): added a precision gate that keeps loose/unrecognized-term matches only when a term hits title/skills or the full phrase is in the bio, and folded a normalized `ts_rank` relevance bonus into the score so coincidental matches can no longer ride in on credibility alone
 - [x] New Alembic migrations: `a1b2c3d4e5f6` (indexes), `b3c4d5e6f7a8` (pg_trgm + stored tsvector column + trigger + GIN indexes)
 
 ### Database Indexes (Critical missing FKs)

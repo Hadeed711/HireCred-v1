@@ -139,9 +139,11 @@ Natural language queries ("reliable React developer with startup experience") pa
 - Never loads more than 200 rows into Python; Python ranks the pre-filtered set
 - Returns empty results with a message when nothing matches — no random fallback
 
-**Ranking formula:** 40% credibility score + 35% skill match + 15% appreciation ratings + 10% profile views.
+**Precision gate (loose queries):** When a query has no profession and no recognized skill (the words were extracted as a last resort, e.g. "a space explorer"), the FTS AND-filter can match scattered, coincidental bio words. The gate keeps a candidate only if a loose term appears in its title/skills, or the full query phrase appears intact in its bio — eliminating "matched only on prose coincidence" false positives that previously rode in on credibility alone.
 
-**No results:** Returns empty list + `"message"` field explaining no candidates were found. No random unrelated profiles returned.
+**Ranking formula:** 40% credibility score + 35% skill match + 15% appreciation ratings + 10% profile views, plus up to 12 points of textual-relevance bonus from the per-batch normalized FTS rank (`ts_rank`) so a genuinely on-topic profile out-ranks one that merely shares a credibility score.
+
+**No results:** Returns empty list + `"message"` field explaining no candidates were found. No random unrelated profiles returned (including when the precision gate filters out every coincidental match).
 
 ### 8. Trust Leaderboard
 Top 20 candidates ranked by a combined metric. High fraud risk → excluded. Medium fraud risk → appreciation weight halved. Cached 2 minutes.
