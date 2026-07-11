@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CredibilityScore } from '../../lib/types'
 import { Trophy, ShieldAlert, Link2, AlertTriangle, CheckCircle2, CircleX, RefreshCw } from 'lucide-react'
 import api from '../../lib/api'
@@ -44,6 +44,13 @@ function scoreSummary(score: number): string {
 
 export default function ScoreWidget({ score, isLoading, userId, isOwn }: Props) {
   const [refreshing, setRefreshing] = useState(false)
+  // Ring sweeps in from 0 on mount / when the score value changes
+  const [ringMounted, setRingMounted] = useState(false)
+  useEffect(() => {
+    setRingMounted(false)
+    const t = requestAnimationFrame(() => requestAnimationFrame(() => setRingMounted(true)))
+    return () => cancelAnimationFrame(t)
+  }, [score?.score])
 
   async function handleRefresh() {
     if (!userId || refreshing) return
@@ -103,7 +110,7 @@ export default function ScoreWidget({ score, isLoading, userId, isOwn }: Props) 
   }
 
   const pct = score.score / 100
-  const dashOffset = CIRCUMFERENCE * (1 - pct)
+  const dashOffset = ringMounted ? CIRCUMFERENCE * (1 - pct) : CIRCUMFERENCE
   const color = scoreColor(score.score)
   const bgClass = scoreBgClass(score.score)
 
@@ -114,7 +121,7 @@ export default function ScoreWidget({ score, isLoading, userId, isOwn }: Props) 
   const authFlags = (score.authenticity_flags || []).filter((f) => f.trim())
 
   return (
-    <div className={`rounded-2xl border p-6 bg-linear-to-br ${bgClass}`}>
+    <div className={`rounded-2xl border p-6 bg-linear-to-br ${bgClass} animate-fade-up`}>
       <h2 className="text-base font-semibold text-gray-900 mb-2 flex items-center gap-2">
         <Trophy className="h-4.5 w-4.5 text-indigo-600" /> HireCred Score
         <span className="flex-1 h-px bg-gray-200/60 ml-1" />
@@ -130,13 +137,17 @@ export default function ScoreWidget({ score, isLoading, userId, isOwn }: Props) 
         {/* Ring */}
         <div className="flex flex-col items-center gap-2 shrink-0">
           <div className="relative">
-            <svg width={SIZE} height={SIZE} className="-rotate-90">
+            <div
+              className="absolute inset-2 rounded-full blur-xl opacity-25 pointer-events-none"
+              style={{ backgroundColor: color }}
+            />
+            <svg width={SIZE} height={SIZE} className="-rotate-90 relative">
               <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth={STROKE} />
               <circle
                 cx={SIZE / 2} cy={SIZE / 2} r={R}
                 fill="none" stroke={color} strokeWidth={STROKE} strokeLinecap="round"
                 strokeDasharray={CIRCUMFERENCE} strokeDashoffset={dashOffset}
-                style={{ transition: 'stroke-dashoffset 1s ease' }}
+                style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.16, 1, 0.3, 1)' }}
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">

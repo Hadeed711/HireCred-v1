@@ -24,12 +24,19 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from src.database import ping_db
+    from src.database import ping_db, engine
     logger.info("Warming up database connection (Neon cold-start)...")
     ok = await ping_db(retries=6)
     if not ok:
         logger.warning("Database warmup failed — first requests may be slow or fail.")
     yield
+    # Graceful shutdown: close shared HTTP pools and the DB engine so
+    # in-flight sockets aren't abandoned.
+    from src.services.url_checker import close_url_checker_client
+    from src.ai.ollama_client import close_ollama_client
+    await close_url_checker_client()
+    await close_ollama_client()
+    await engine.dispose()
 
 
 app = FastAPI(title="HireCred API", version="1.0.0", lifespan=lifespan)
@@ -95,3 +102,10 @@ async def health():
 async def health_ai():
     from src.ai.ollama_client import check_ollama_health
     return await check_ollama_health()
+
+
+@app.get("/health/queue")
+async def health_queue():
+    """Background scoring queue stats — scheduled/coalesced/in-flight/failed."""
+    from src.services.task_manager import queue_stats
+    return queue_stats()

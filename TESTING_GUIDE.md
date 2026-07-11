@@ -1,6 +1,6 @@
 # HireCred-v1 — Complete Testing Guide
 
-**Last updated: 2026-06-01**
+**Last updated: 2026-07-11**
 
 ---
 
@@ -174,9 +174,10 @@ Check `authenticity_flags` in the score response — should list 6+ specific fla
 ### Feature 11 — Appreciation System
 1. As client, go to candidate's profile → "Give Appreciation" button
 2. Write freeform feedback ("Great React developer, delivered on time and communicated well")
-3. Submit → Ollama extracts ratings + summary (background)
+3. Submit → response returns as soon as Ollama extracts the ratings + summary (the follow-up rescore and fraud analysis run in the background — the POST no longer waits ~20s for them)
 4. Check `/api/appreciation/{uid}` for structured ratings
-5. Score recalculated in background after appreciation
+5. Score recalculated in background after appreciation (fraud analysis runs after the rescore, in that order)
+6. Submitting > 10 appreciations in a minute → 429 rate-limit response
 
 ---
 
@@ -202,6 +203,22 @@ Check `authenticity_flags` in the score response — should list 6+ specific fla
 3. Attach an image using ImageIcon button
 4. Hover over your own message → Trash2 delete icon appears
 5. Deleted messages show "Message deleted" placeholder text
+
+---
+
+### Feature 15 — Background Queue (Infrastructure)
+1. Open **http://localhost:8000/health/queue** — all counters start at 0
+2. Edit and save your profile 4–5 times quickly (within ~2 seconds)
+3. Refresh `/health/queue`:
+   - `scheduled` increases by **1** (not 5)
+   - `coalesced` shows the absorbed duplicate saves
+   - `in_flight` is 1 while the pipeline runs, then `completed` increments
+4. Save again while a run is in flight → `dirty_pending` shows 1, and a single follow-up run fires when the first finishes
+5. `failed` should stay 0; if not, check server logs for the pipeline error
+
+### Feature 16 — Upload Content Validation
+1. Rename a `.txt` file to `.pdf` and upload as CV → rejected with "File content is not a valid PDF" (magic-byte check — the extension and Content-Type header are not trusted)
+2. Upload a real PDF → stored as `server/uploads/cv/{user_id}.pdf` regardless of its original filename
 
 ---
 

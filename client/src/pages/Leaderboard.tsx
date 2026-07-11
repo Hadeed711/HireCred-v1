@@ -57,7 +57,7 @@ export default function Leaderboard() {
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-indigo-50">
-      <header className="bg-white/80 backdrop-blur border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+      <header className="glass px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <button
           onClick={() => navigate(-1)}
           className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1.5 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition-colors"
@@ -75,8 +75,16 @@ export default function Leaderboard() {
 
       <main className="max-w-2xl mx-auto px-4 py-8">
         {/* Hero banner */}
-        <div className="bg-linear-to-r from-indigo-600 to-violet-600 text-white rounded-2xl p-6 mb-6 text-center shadow-lg">
-          <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center mx-auto mb-3">
+        <div className="relative overflow-hidden bg-linear-to-r from-indigo-600 to-violet-600 text-white rounded-2xl p-6 mb-6 text-center shadow-lg animate-fade-up">
+          <div
+            className="absolute inset-0 pointer-events-none opacity-30"
+            style={{
+              backgroundImage: 'radial-gradient(circle, rgb(255 255 255 / 0.16) 1px, transparent 1px)',
+              backgroundSize: '22px 22px',
+              maskImage: 'radial-gradient(ellipse at 50% 0%, black 20%, transparent 75%)',
+            }}
+          />
+          <div className="relative w-14 h-14 rounded-2xl bg-white/20 ring-1 ring-white/25 flex items-center justify-center mx-auto mb-3 animate-float">
             <Medal className="h-7 w-7 text-yellow-300" />
           </div>
           <h2 className="text-xl font-bold mb-1">Top Trusted Professionals</h2>
@@ -123,15 +131,16 @@ export default function Leaderboard() {
 
         {qualifiedData && qualifiedData.length > 0 && (
           <div className="space-y-3">
-            {qualifiedData.map((entry) => {
+            {qualifiedData.map((entry, i) => {
               const meta = RANK_STYLE[entry.rank]
               const colors = scoreColor(entry.credibility_score)
               return (
                 <button
                   key={entry.user_id}
                   onClick={() => navigate(`/profile/${entry.uid ?? entry.user_id}`, { state: { from: '/leaderboard' } })}
+                  style={{ animationDelay: `${Math.min(i, 8) * 55}ms` }}
                   className={`w-full bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4
-                    hover:border-indigo-200 hover:shadow-md transition-all text-left group ${meta?.ring ?? ''}`}
+                    hover:border-indigo-200 card-hover animate-fade-up text-left group ${meta?.ring ?? ''}`}
                 >
                   {/* Rank badge */}
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${

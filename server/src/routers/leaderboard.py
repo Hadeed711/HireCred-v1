@@ -1,8 +1,22 @@
+"""
+Trust Leaderboard — fully SQL-ranked.
+
+Scalability design (see INFRASTRUCTURE.md → "Leaderboard at 1M users"):
+The previous implementation loaded EVERY eligible candidate row into Python
+and ranked there — O(total users) memory and time per cache miss. Now the
+composite rank score is computed inside PostgreSQL and only the top 20 rows
+ever cross the wire. Aggregates (appreciations, proof signals) are joined as
+grouped subqueries, so the whole thing is one round trip.
+
+At true 1M scale the next step is precomputing this into a materialized view
+or a Redis sorted set refreshed every few minutes — the query below is the
+exact definition that view would use.
+"""
 import asyncio
 import time
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case, desc
 
 from src.database import get_db
 from src.models.user import User, UserRole
@@ -17,10 +31,84 @@ _cache: dict = {"data": None, "expires_at": 0.0}
 _CACHE_TTL = 120  # 2 minutes
 _cache_lock = asyncio.Lock()
 
+_TOP_N = 20
+_MIN_ENTRIES_FOR_CONFIDENCE = 5
+
 
 def invalidate_leaderboard_cache() -> None:
     _cache["data"] = None
     _cache["expires_at"] = 0.0
+
+
+def _leaderboard_stmt():
+    """Top-N leaderboard computed entirely in SQL.
+
+    Weights (must match the documented formula):
+      credibility 65% + appreciation 20% (10% if medium fraud risk)
+      + proof signals (max 5 × 2 pts) + views bonus (max 5 pts).
+    """
+    appr_sq = (
+        select(
+            Appreciation.to_user_id.label("user_id"),
+            func.count(Appreciation.id).label("appr_count"),
+            (
+                (
+                    func.avg(Appreciation.skill_rating)
+                    + func.avg(Appreciation.communication_rating)
+                    + func.avg(Appreciation.reliability_rating)
+                ) / 3.0
+            ).label("avg_rating"),
+        )
+        .group_by(Appreciation.to_user_id)
+        .subquery()
+    )
+
+    proof_sq = (
+        select(
+            Profile.user_id.label("user_id"),
+            func.count(ProofSignal.id).label("proof_count"),
+        )
+        .join(ProofSignal, ProofSignal.profile_id == Profile.id)
+        .group_by(Profile.user_id)
+        .subquery()
+    )
+
+    appr_weight = case(
+        (CredibilityScore.fraud_risk == FraudRisk.medium, 0.10),
+        else_=0.20,
+    )
+    proof_count = func.coalesce(proof_sq.c.proof_count, 0)
+    views_norm = func.least(Profile.profile_views / 50.0, 10.0)
+
+    rank_score = (
+        CredibilityScore.score * 0.65
+        + appr_sq.c.avg_rating * 10.0 * appr_weight
+        + func.least(proof_count, 5) * 2.0
+        + views_norm * 0.5
+    ).label("rank_score")
+
+    return (
+        select(
+            User,
+            Profile,
+            CredibilityScore,
+            appr_sq.c.appr_count,
+            appr_sq.c.avg_rating,
+            proof_count.label("proof_count"),
+            rank_score,
+        )
+        .join(Profile, Profile.user_id == User.id)
+        .join(CredibilityScore, CredibilityScore.user_id == User.id)
+        # INNER join = "at least one appreciation" eligibility rule
+        .join(appr_sq, appr_sq.c.user_id == User.id)
+        .outerjoin(proof_sq, proof_sq.c.user_id == User.id)
+        .where(User.role == UserRole.candidate)
+        .where(User.is_active == True)
+        .where(CredibilityScore.fraud_risk != FraudRisk.high)
+        .where(CredibilityScore.score >= 10)
+        .order_by(desc("rank_score"))
+        .limit(_TOP_N)
+    )
 
 
 @router.get("")
@@ -35,94 +123,28 @@ async def get_leaderboard(db: AsyncSession = Depends(get_db)):
         if _cache["data"] is not None and now < _cache["expires_at"]:
             return _cache["data"]
 
-        result = await db.execute(
-            select(User, Profile, CredibilityScore)
-            .join(Profile, Profile.user_id == User.id)
-            .join(CredibilityScore, CredibilityScore.user_id == User.id)
-            .where(User.role == UserRole.candidate)
-            .where(User.is_active == True)
-            .where(CredibilityScore.fraud_risk != FraudRisk.high)
-            .where(CredibilityScore.score >= 10)
-        )
-        rows = result.all()
-        all_user_ids = [user.id for user, _, _ in rows]
+        rows = (await db.execute(_leaderboard_stmt())).all()
 
-        # Batch load proof signal counts (single query)
-        proof_counts: dict = {}
-        if all_user_ids:
-            pc_result = await db.execute(
-                select(Profile.user_id, func.count(ProofSignal.id).label("cnt"))
-                .join(ProofSignal, ProofSignal.profile_id == Profile.id)
-                .where(Profile.user_id.in_(all_user_ids))
-                .group_by(Profile.user_id)
-            )
-            proof_counts = {row.user_id: int(row.cnt) for row in pc_result.all()}
-
-        # Batch load appreciation aggregates (single query — was N+1)
-        appr_map: dict = {}
-        if all_user_ids:
-            appr_result = await db.execute(
-                select(
-                    Appreciation.to_user_id,
-                    func.count(Appreciation.id).label("cnt"),
-                    func.avg(Appreciation.skill_rating).label("avg_skill"),
-                    func.avg(Appreciation.communication_rating).label("avg_comm"),
-                    func.avg(Appreciation.reliability_rating).label("avg_rel"),
-                )
-                .where(Appreciation.to_user_id.in_(all_user_ids))
-                .group_by(Appreciation.to_user_id)
-            )
-            for r in appr_result.all():
-                appr_map[r.to_user_id] = {
-                    "count": int(r.cnt),
-                    "avg": (
-                        (float(r.avg_skill or 0) + float(r.avg_comm or 0) + float(r.avg_rel or 0)) / 3
-                    ),
-                }
-
-        entries = []
-        for user, profile, score in rows:
-            appr = appr_map.get(user.id)
-            count = appr["count"] if appr else 0
-            avg_ratings = appr["avg"] if appr else 0.0
-
-            if count < 1:
-                continue
-
-            # credibility score is the primary signal (65%)
-            # appreciation is secondary (20%, halved for medium fraud risk)
-            # proof signals and views are small bonuses (10% + 5%)
-            appr_weight = 0.10 if score.fraud_risk == FraudRisk.medium else 0.20
-            proof_count = proof_counts.get(user.id, 0)
-            views_norm = min(profile.profile_views / 50.0, 10.0)
-
-            rank_score = (
-                score.score * 0.65
-                + avg_ratings * 10 * appr_weight
-                + min(proof_count, 5) * 2.0
-                + views_norm * 0.5
-            )
-
-            entries.append({
+        insufficient = len(rows) < _MIN_ENTRIES_FOR_CONFIDENCE
+        ranked = []
+        for i, row in enumerate(rows):
+            user: User = row.User
+            profile: Profile = row.Profile
+            score: CredibilityScore = row.CredibilityScore
+            ranked.append({
                 "user_id": str(user.id),
                 "uid": user.uid,
                 "name": user.full_name,
                 "skills": (profile.skills or [])[:4],
                 "credibility_score": score.score,
-                "appreciation_count": count,
-                "avg_ratings": round(avg_ratings, 1),
-                "proof_signal_count": proof_count,
+                "appreciation_count": int(row.appr_count),
+                "avg_ratings": round(float(row.avg_rating or 0), 1),
+                "proof_signal_count": int(row.proof_count),
                 "fraud_risk": score.fraud_risk.value,
-                "rank_score": round(rank_score, 2),
+                "rank_score": round(float(row.rank_score), 2),
+                "rank": i + 1,
+                "insufficient_data": insufficient,
             })
-
-        entries.sort(key=lambda x: x["rank_score"], reverse=True)
-
-        insufficient = len(entries) < 5
-        ranked = [
-            {**entry, "rank": i + 1, "insufficient_data": insufficient}
-            for i, entry in enumerate(entries[:20])
-        ]
 
         _cache["data"] = ranked
         _cache["expires_at"] = time.time() + _CACHE_TTL

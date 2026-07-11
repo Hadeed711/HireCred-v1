@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,6 +6,7 @@ from src.database import get_db
 from src.middleware.auth import get_current_user
 from src.models.user import User
 from src.services.search_service import search_candidates
+from src.rate_limiter import limiter
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
@@ -44,7 +45,9 @@ class SearchResponse(BaseModel):
 
 
 @router.post("", response_model=SearchResponse)
+@limiter.limit("30/minute")
 async def search(
+    request: Request,
     body: SearchRequest,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),

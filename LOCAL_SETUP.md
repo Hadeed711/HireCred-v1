@@ -1,6 +1,6 @@
 # HireCred — Local Setup Guide
 
-**Last updated: 2026-06-01**
+**Last updated: 2026-07-11**
 
 ---
 
@@ -86,6 +86,7 @@ Open **http://localhost:5173**
 |-------|-----|
 | Backend alive | http://localhost:8000/health |
 | Ollama alive | http://localhost:8000/health/ai |
+| Scoring queue stats | http://localhost:8000/health/queue |
 | Frontend | http://localhost:5173 |
 | Swagger docs | http://localhost:8000/docs |
 
@@ -119,9 +120,10 @@ This is restricted to emails listed in `SUPER_ADMIN_EMAILS` in `.env`.
 ## Scoring Behaviour
 
 - Score computation is **always asynchronous** — profile saves, CV uploads, and proof signal changes return immediately (< 1s).
+- Saves are **debounced**: a burst of edits within ~2s triggers one scoring run, not one per save. If you edit again while a run is in flight, exactly one follow-up run happens on the latest data. Watch it live at `GET /health/queue` (`coalesced` counts absorbed duplicates).
 - The score updates in the background (typically 5–30s depending on Ollama speed). The ScoreWidget polls automatically.
 - If Ollama is unavailable or times out (10s limit), a rule-based fallback runs instead.
-- Profile owners can click **"Refresh"** on the HireCred Score widget to manually trigger recomputation via `POST /api/profile/{id}/rescore`.
+- Profile owners can click **"Refresh"** on the HireCred Score widget to manually trigger recomputation via `POST /api/profile/{id}/rescore` (rate-limited 5/min).
 
 ---
 

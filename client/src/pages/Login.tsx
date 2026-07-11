@@ -38,22 +38,28 @@ export default function Login() {
     <div className="min-h-screen flex">
       {/* ── Left branding panel ── */}
       <div className="hidden lg:flex lg:w-5/12 bg-linear-to-br from-indigo-950 via-indigo-900 to-violet-900 flex-col justify-between p-12 text-white relative overflow-hidden">
-        {/* Decorative circles */}
-        <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-white/5 pointer-events-none" />
-        <div className="absolute top-1/2 -right-10 w-40 h-40 rounded-full bg-white/5 pointer-events-none" />
-        <div className="absolute -bottom-12 -left-12 w-56 h-56 rounded-full bg-white/5 pointer-events-none" />
-        <div className="absolute bottom-1/3 right-8 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
+        {/* Engineering dot grid + aurora glow */}
+        <div
+          className="absolute inset-0 pointer-events-none opacity-40"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgb(255 255 255 / 0.10) 1px, transparent 1px)',
+            backgroundSize: '26px 26px',
+            maskImage: 'radial-gradient(ellipse at 30% 40%, black 30%, transparent 75%)',
+          }}
+        />
+        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-violet-500/20 blur-3xl pointer-events-none animate-float" />
+        <div className="absolute -bottom-32 -left-20 w-80 h-80 rounded-full bg-indigo-400/15 blur-3xl pointer-events-none animate-float" style={{ animationDelay: '2.5s' }} />
 
         {/* Logo */}
-        <div className="relative z-10">
+        <div className="relative z-10 animate-fade-up">
           <div className="text-3xl font-bold tracking-tight mb-1">HireCred</div>
           <p className="text-indigo-300 text-sm font-medium">Trust-based hiring platform</p>
         </div>
 
         {/* Hero copy + features */}
         <div className="relative z-10 space-y-8">
-          <div>
-            <h2 className="text-3xl font-bold leading-snug mb-2">
+          <div className="animate-fade-up stagger-1">
+            <h2 className="text-3xl font-bold leading-snug mb-2 tracking-tight">
               Hire with confidence.
             </h2>
             <p className="text-indigo-300 text-base leading-relaxed">
@@ -62,9 +68,9 @@ export default function Login() {
           </div>
 
           <div className="space-y-5">
-            {FEATURES.map((f) => (
-              <div key={f.title} className="flex items-start gap-3.5">
-                <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-lg shrink-0">
+            {FEATURES.map((f, i) => (
+              <div key={f.title} className={`flex items-start gap-3.5 animate-fade-up stagger-${i + 2} group`}>
+                <div className="w-9 h-9 rounded-xl bg-white/10 ring-1 ring-white/15 flex items-center justify-center text-lg shrink-0 transition-all duration-300 group-hover:bg-white/20 group-hover:ring-white/30 group-hover:scale-105">
                   <f.icon className="h-4.5 w-4.5" />
                 </div>
                 <div>
@@ -77,23 +83,23 @@ export default function Login() {
         </div>
 
         {/* Bottom */}
-        <p className="relative z-10 text-indigo-400 text-xs">
+        <p className="relative z-10 text-indigo-400 text-xs animate-fade-in stagger-6">
           Built for modern hiring teams that value trust over gut feeling.
         </p>
       </div>
 
       {/* ── Right form panel ── */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12 bg-gray-50">
-        <div className="w-full max-w-md">
+      <div className="flex-1 flex items-center justify-center px-6 py-12 bg-gray-50 bg-grid relative">
+        <div className="w-full max-w-md relative z-10">
 
           {/* Mobile logo */}
-          <div className="lg:hidden text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">HireCred</h1>
+          <div className="lg:hidden text-center mb-8 animate-fade-up">
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">HireCred</h1>
             <p className="mt-1 text-gray-500 text-sm">Trust-based hiring platform</p>
           </div>
 
           {/* Form card */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+          <div className="bg-white rounded-2xl shadow-xl shadow-indigo-100/50 border border-gray-200/80 p-8 animate-scale-in">
             <div className="mb-7">
               <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
               <p className="text-gray-500 text-sm mt-1">Sign in to your HireCred account</p>
@@ -141,7 +147,7 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold py-2.5 px-4 rounded-xl transition-colors text-sm shadow-sm shadow-indigo-200 mt-2"
+                className="w-full bg-linear-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-md shadow-indigo-300/50 hover:shadow-lg hover:shadow-indigo-300/60 mt-2 transition-all duration-200"
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">

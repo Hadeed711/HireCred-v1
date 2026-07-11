@@ -42,7 +42,23 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
-      <Toaster position="top-right" toastOptions={{ duration: 3500 }} />
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 3500,
+          style: {
+            background: 'rgba(255, 255, 255, 0.92)',
+            backdropFilter: 'blur(12px)',
+            color: '#111827',
+            border: '1px solid rgb(229 231 235)',
+            borderRadius: '14px',
+            boxShadow: '0 8px 30px rgb(79 70 229 / 0.12)',
+            fontSize: '13.5px',
+            fontWeight: 500,
+          },
+          success: { iconTheme: { primary: '#4f46e5', secondary: '#fff' } },
+        }}
+      />
     </QueryClientProvider>
   )
 }

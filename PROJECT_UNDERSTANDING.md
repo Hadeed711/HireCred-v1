@@ -1,6 +1,8 @@
 # HireCred-v1 — Project Understanding
 
-**Last updated: 2026-06-01**
+**Last updated: 2026-07-11**
+
+> Scaling architecture, million-user design rationale, and production stack: see **`INFRASTRUCTURE.md`**.
 
 ## The Core Problem
 
@@ -52,6 +54,8 @@ A candidate's profile contains:
 **Non-blocking validation:** Profile saves are never blocked. Any validity issues are returned as warnings that affect the HireCred Score, not as hard errors.
 
 **Background scoring:** All score computation runs asynchronously after saves — profile/signal/CV operations return immediately (< 1 second). Score updates appear automatically via polling.
+
+Scoring runs through a managed in-process queue (`task_manager.py`): a burst of saves is debounced into one run, at most one run per user is in flight (plus one queued follow-up if data changed mid-run), concurrency against Ollama is capped at 2, and task references are held so runs can't be garbage-collected mid-flight. Queue stats: `GET /health/queue`.
 
 ### 2. HireCred Score (0–100)
 The central trust metric. Computed in background by an Ollama LLM fed with:
@@ -146,7 +150,7 @@ Natural language queries ("reliable React developer with startup experience") pa
 **No results:** Returns empty list + `"message"` field explaining no candidates were found. No random unrelated profiles returned (including when the precision gate filters out every coincidental match).
 
 ### 8. Trust Leaderboard
-Top 20 candidates ranked by a combined metric. High fraud risk → excluded. Medium fraud risk → appreciation weight halved. Cached 2 minutes.
+Top 20 candidates ranked by a combined metric (65% credibility + appreciation + proof-signal and views bonuses). High fraud risk → excluded. Medium fraud risk → appreciation weight halved. The entire ranking is computed **inside PostgreSQL** with aggregate subqueries and `LIMIT 20` — only 20 rows ever reach Python, so the endpoint's cost doesn't grow with the user count. Cached 2 minutes with stampede protection.
 
 ### 9. Report Account System
 Authenticated users can report any profile they don't own:
@@ -213,6 +217,7 @@ Simple conversation threads between any two authenticated users. Supports text a
 | PUT | `/api/admin/users/{id}/set-admin` | Promote/demote admin |
 | GET | `/health` | Server health |
 | GET | `/health/ai` | Ollama health |
+| GET | `/health/queue` | Background scoring queue stats (scheduled / coalesced / in-flight / failed) |
 
 ---
 
@@ -221,6 +226,7 @@ Simple conversation threads between any two authenticated users. Supports text a
 | Purpose | File |
 |---------|------|
 | Main scoring pipeline | `server/src/services/credibility_service.py` |
+| Background task queue (debounce/dedup/semaphore) | `server/src/services/task_manager.py` |
 | LLM prompt (with evidence context) | `server/src/ai/credibility_prompt.py` |
 | 16-point authenticity detection | `server/src/services/authenticity_service.py` |
 | URL checker + title extraction | `server/src/services/url_checker.py` |
@@ -242,7 +248,9 @@ Simple conversation threads between any two authenticated users. Supports text a
 | SQL injection | SQLAlchemy parameterized queries throughout |
 | Passwords | bcrypt hashing |
 | Auth | JWT (HS256), 7-day expiry |
-| Rate limiting | slowapi on `/auth/login` (10/min) and `/auth/register` (5/min) |
+| Rate limiting | slowapi: login 10/min, register 5/min, search 30/min, appreciation 10/min, rescore 5/min |
+| Upload content trust | Magic-byte verification (`%PDF-`, image decode); server-generated filenames — client filename/extension never touches the filesystem |
+| Background AI load | Managed queue: debounce + dedup per user, semaphore(2) against Ollama, GC-safe task refs (`task_manager.py`) |
 | CORS | Whitelisted origins + specific methods/headers (no `*`) |
 | Email enumeration | `owner_email` hidden from public profile responses |
 | File upload safety | MIME type + size validation on server and client |

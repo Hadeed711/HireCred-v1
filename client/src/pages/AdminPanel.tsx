@@ -80,7 +80,7 @@ export default function AdminPanel() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+      <header className="glass px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/dashboard')}
@@ -94,9 +94,9 @@ export default function AdminPanel() {
         <span className="text-xs text-gray-400">{user?.email}</span>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8">
+      <main className="max-w-5xl mx-auto px-4 py-8 animate-fade-up">
         {/* Tab bar */}
-        <div className="flex gap-1 mb-6 bg-white border border-gray-200 rounded-xl p-1 w-fit">
+        <div className="flex gap-1 mb-6 bg-white border border-gray-200 rounded-xl p-1 w-fit shadow-sm">
           {(['reports', 'users'] as Tab[]).map((t) => (
             <button
               key={t}

@@ -25,8 +25,8 @@ export default function AdminLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center px-6 py-12">
-      <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+    <div className="min-h-screen bg-slate-100 bg-grid flex items-center justify-center px-6 py-12">
+      <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-200/60 p-8 animate-scale-in relative z-10">
         <div className="mb-6">
           <p className="text-xs font-semibold tracking-widest text-red-600 uppercase">Dedicated Admin Portal</p>
           <h1 className="text-2xl font-bold text-slate-900 mt-2">Admin Login</h1>

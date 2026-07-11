@@ -342,9 +342,9 @@ export default function Inbox() {
                                 )}
                                 {/* Text bubble */}
                                 {msg.content && (
-                                  <div className={`px-3.5 py-2.5 text-sm leading-relaxed ${
+                                  <div className={`px-3.5 py-2.5 text-sm leading-relaxed animate-scale-in ${
                                     isMe
-                                      ? 'bg-indigo-600 text-white rounded-2xl rounded-br-md'
+                                      ? 'bg-linear-to-br from-indigo-600 to-violet-600 text-white rounded-2xl rounded-br-md shadow-sm shadow-indigo-200/60'
                                       : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-bl-md shadow-sm'
                                   }`}>
                                     {msg.content}

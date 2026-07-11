@@ -472,7 +472,7 @@ export default function ProfileEditor() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sticky header */}
-      <header className="bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+      <header className="glass px-6 py-3.5 flex items-center justify-between sticky top-0 z-10">
         <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1.5 hover:bg-gray-100 px-2 py-1.5 rounded-lg transition-colors">
           ← Dashboard
         </button>
@@ -507,7 +507,7 @@ export default function ProfileEditor() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+      <main className="max-w-3xl mx-auto px-4 py-8 space-y-6 animate-fade-up">
 
         {/* Validation warning banner */}
         <ValidationWarningBanner warnings={activeWarnings} />

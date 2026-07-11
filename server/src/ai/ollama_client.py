@@ -5,6 +5,25 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Shared client — Ollama lives on localhost, so keeping one persistent
+# connection pool avoids a TCP handshake per LLM call.
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=120.0)
+    return _client
+
+
+async def close_ollama_client() -> None:
+    """Called from the app lifespan on shutdown."""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+
 
 async def call_ollama(prompt: str, num_predict: int = 1024) -> str:
     """Send a prompt to the local Ollama instance and return the response text."""
@@ -18,18 +37,18 @@ async def call_ollama(prompt: str, num_predict: int = 1024) -> str:
             "num_predict": num_predict,
         },
     }
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(f"{settings.ollama_host}/api/generate", json=payload)
-        if not resp.is_success:
-            body = ""
-            try:
-                body = resp.json().get("error", resp.text)
-            except Exception:
-                body = resp.text[:300]
-            logger.error("Ollama returned %s: %s", resp.status_code, body)
-            resp.raise_for_status()
-        data = resp.json()
-        return data.get("response", "").strip()
+    client = _get_client()
+    resp = await client.post(f"{settings.ollama_host}/api/generate", json=payload)
+    if not resp.is_success:
+        body = ""
+        try:
+            body = resp.json().get("error", resp.text)
+        except Exception:
+            body = resp.text[:300]
+        logger.error("Ollama returned %s: %s", resp.status_code, body)
+        resp.raise_for_status()
+    data = resp.json()
+    return data.get("response", "").strip()
 
 
 def extract_json(text: str) -> dict:

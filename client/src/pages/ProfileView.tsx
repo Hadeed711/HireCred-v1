@@ -115,7 +115,7 @@ export default function ProfileView() {
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-indigo-50">
       {/* ── Sticky header ── */}
-      <header className="bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-10">
+      <header className="glass px-6 py-3.5 flex items-center justify-between sticky top-0 z-10">
         <button
           onClick={() => navigate(backTarget)}
           className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1.5 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg transition-colors"
@@ -182,8 +182,16 @@ export default function ProfileView() {
         )}
 
         {/* ── Hero card ── */}
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm animate-fade-up">
           <div className="h-24 bg-linear-to-r from-indigo-500 via-violet-500 to-purple-600 relative">
+            <div
+              className="absolute inset-0 pointer-events-none opacity-30"
+              style={{
+                backgroundImage: 'radial-gradient(circle, rgb(255 255 255 / 0.18) 1px, transparent 1px)',
+                backgroundSize: '20px 20px',
+                maskImage: 'linear-gradient(105deg, black 30%, transparent 80%)',
+              }}
+            />
             {score && (
               <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-2xl px-3 py-1.5 border border-white/30">
                 <svg width="20" height="20" className="-rotate-90">
@@ -553,7 +561,7 @@ function CvSection({ cvUrl, cvAnalysis }: { cvUrl: string; cvAnalysis: CvAnalysi
 
 function ViewSection({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-shadow duration-300 animate-fade-up">
       <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
         <Icon className="h-4.5 w-4.5 text-indigo-600" />
         {title}

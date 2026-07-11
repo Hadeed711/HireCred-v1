@@ -4,9 +4,9 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from src.database import get_db
@@ -15,7 +15,8 @@ from src.models.profile import Profile
 from src.models.credibility_score import CredibilityScore
 from src.schemas.profile import ProfileUpdate, ProfileResponse, ScoreResponse
 from src.middleware.auth import get_current_user, get_optional_user
-from src.services.credibility_service import compute_and_save_score
+from src.rate_limiter import limiter
+from src.services.task_manager import schedule_rescore
 from src.services.validation_service import validate_full_profile
 
 logger = logging.getLogger(__name__)
@@ -115,19 +116,19 @@ async def get_profile(
     viewer: Optional[User] = Depends(get_optional_user),
 ):
     user_id = await _resolve_user_id(user_ref, db)
-    profile = await _get_profile_with_user(user_id, db)
 
-    if not viewer or viewer.id != user_id:
-        profile.profile_views += 1
+    is_owner = viewer is not None and viewer.id == user_id
+    if not is_owner:
+        # Atomic increment — a plain `profile.profile_views += 1` is a
+        # read-modify-write race that loses counts under concurrent views.
+        await db.execute(
+            update(Profile)
+            .where(Profile.user_id == user_id)
+            .values(profile_views=Profile.profile_views + 1)
+        )
         await db.commit()
 
-    result = await db.execute(
-        select(Profile)
-        .where(Profile.id == profile.id)
-        .options(selectinload(Profile.proof_signals), selectinload(Profile.user))
-    )
-    profile = result.scalar_one()
-    is_owner = viewer is not None and viewer.id == user_id
+    profile = await _get_profile_with_user(user_id, db)
     return _build_profile_response(profile, is_owner=is_owner)
 
 
@@ -175,7 +176,7 @@ async def update_profile(
     )
     profile = result.scalar_one()
 
-    asyncio.create_task(compute_and_save_score(user_id))
+    schedule_rescore(user_id)
 
     response = _build_profile_response(profile, is_owner=True)
     if validation_warnings:
@@ -212,11 +213,18 @@ async def upload_cv(
             detail="CV file must be under 5 MB.",
         )
 
-    # Save file
-    ext = Path(file.filename or "cv").suffix or ".pdf"
-    filename = f"{user_id}{ext}"
+    # Content-Type headers and filenames are client-controlled — verify the
+    # actual bytes are a PDF (magic number) before persisting.
+    if not data.startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="File content is not a valid PDF.",
+        )
+
+    # Server-chosen filename — never derived from client input.
+    filename = f"{user_id}.pdf"
     dest = CV_DIR / filename
-    dest.write_bytes(data)
+    await asyncio.to_thread(dest.write_bytes, data)
 
     # Persist to profile
     result = await db.execute(select(Profile).where(Profile.user_id == user_id))
@@ -233,7 +241,7 @@ async def upload_cv(
     profile.cv_analysis = None
     await db.commit()
 
-    asyncio.create_task(compute_and_save_score(user_id))
+    schedule_rescore(user_id)
 
     return {
         "cv_url": f"/uploads/cv/{filename}",
@@ -262,11 +270,13 @@ async def delete_cv(
     profile.cv_analysis = None
     await db.commit()
 
-    asyncio.create_task(compute_and_save_score(user_id))
+    schedule_rescore(user_id)
 
 
 @router.post("/{user_id}/rescore", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("5/minute")
 async def rescore_profile(
+    request: Request,
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -274,5 +284,5 @@ async def rescore_profile(
     """Manually trigger credibility score recomputation for the authenticated user."""
     if current_user.id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot rescore another user's profile")
-    asyncio.create_task(compute_and_save_score(user_id))
+    schedule_rescore(user_id)
     return {"message": "Score recomputation started."}

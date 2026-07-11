@@ -1,6 +1,6 @@
 # HireCred-v1 — Build Roadmap & Status
 
-**Last updated: 2026-06-01**  
+**Last updated: 2026-07-11**  
 **Stack:** React + Vite + TypeScript | Python + FastAPI | Neon PostgreSQL | Ollama (qwen2.5:3b local LLM)
 
 ---
@@ -24,7 +24,7 @@
 - [x] Switch from Gemini API to local Ollama (qwen2.5:3b, 8k context)
 - [x] CV upload (PDF only — file stored, presence used as scoring signal)
 - [x] Non-blocking validation: profile saves never return 422; issues become score warnings
-- [x] Background scoring: all score computation via `asyncio.create_task()` — HTTP responses return instantly
+- [x] Background scoring: all score computation runs off the request path — HTTP responses return instantly (since Phase 7: via the managed `task_manager` queue, not bare `asyncio.create_task()`)
 - [x] Manual score refresh: `POST /api/profile/{id}/rescore` endpoint + Refresh button in ScoreWidget
 
 ---
@@ -122,26 +122,55 @@
 
 ---
 
-## Phase 7 — Planned (Not Yet Started)
+## Phase 7 — Infrastructure Hardening (DONE — 2026-07-11)
 
-### 7.1 OAuth Proof Verification
+> Full rationale for every item: `INFRASTRUCTURE.md`
+
+### Background job system (`server/src/services/task_manager.py` — NEW)
+- [x] Replaced all fire-and-forget `asyncio.create_task(compute_and_save_score(...))` calls with a managed queue:
+  - Strong task references — bare `create_task` results can be **garbage-collected mid-run** (asyncio keeps only weak refs), silently dropping scores
+  - 2s debounce + coalescing — a burst of profile saves now triggers **one** scoring run instead of five
+  - Dirty-flag re-run — a save arriving mid-computation queues exactly one follow-up run on the latest data
+  - Semaphore(2) — bounds concurrent LLM pipelines to what local Ollama can actually serve
+  - Failure accounting + `GET /health/queue` observability endpoint
+- [x] Appreciation POST no longer blocks on rescore + fraud analysis (two ~10s LLM pipelines) — both moved to background, with fraud detection **ordered after** the rescore (the rescore UPSERTs the whole score row and would otherwise erase the fraud result)
+
+### Leaderboard (1M-user scalability)
+- [x] Ranking moved **into SQL**: composite score (65% credibility + 20%/10% appreciation + proof + views bonuses) computed as a SQL expression with aggregate subqueries, `ORDER BY ... LIMIT 20` — previously **every eligible candidate row** was loaded into Python and sorted there (O(total users) per cache miss)
+
+### HTTP clients & caches
+- [x] `url_checker.py`: one shared `httpx.AsyncClient` connection pool (was: new client + TLS handshake per checked URL); cache changed from unbounded dict (memory leak) to bounded LRU (512 entries, 5-min TTL)
+- [x] `ollama_client.py`: shared persistent client to Ollama
+- [x] `main.py` lifespan: graceful shutdown closes both HTTP pools and disposes the DB engine
+
+### Correctness & security
+- [x] `profile.py`: profile view counter now an atomic `SET profile_views = profile_views + 1` (was a read-modify-write race that lost counts); redundant third query removed
+- [x] CV upload: PDF **magic-byte** verification (`%PDF-`), server-generated filename (client filename/extension never trusted), non-blocking disk write via `asyncio.to_thread`
+- [x] Proof-signal upload: extension derived from validated content type (not client filename), PDF magic-byte check, non-blocking write
+- [x] New rate limits: search 30/min, rescore 5/min, appreciation 10/min — the LLM-touching endpoints can no longer be used as a DoS vector
+
+---
+
+## Phase 8 — Planned (Not Yet Started)
+
+### 8.1 OAuth Proof Verification
 - [ ] GitHub OAuth: verify ownership of GitHub account linked in proof signals
 - [ ] Create-a-file proof of possession for custom portfolio domains
 
-### 7.2 Duplicate Detection (Cross-Profile)
+### 8.2 Duplicate Detection (Cross-Profile)
 - [ ] Bio similarity fingerprinting across all profiles (difflib or embeddings)
 - [ ] Flag copy-pasted bios from other users
 
-### 7.3 Score Transparency
+### 8.3 Score Transparency
 - [ ] Score breakdown UI: show per-criterion scores (completeness/alignment/portfolio/etc.)
 - [ ] Score history chart (track improvement over time)
 
-### 7.4 Hirer Features
+### 8.4 Hirer Features
 - [ ] Saved candidates list
 - [ ] Hirer-side review/rating of candidates post-hire
 - [ ] Advanced search filters (experience level, location, score range)
 
-### 7.5 Notifications
+### 8.5 Notifications
 - [ ] In-app notifications: new appreciation, new message, score change
 - [ ] Email digest (weekly summary)
 

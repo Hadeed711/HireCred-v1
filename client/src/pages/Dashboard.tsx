@@ -38,7 +38,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-indigo-50">
       {/* ── Top nav ── */}
-      <header className="bg-white/80 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+      <header className="glass px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <span className="text-lg font-bold bg-linear-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
           HireCred
         </span>
@@ -66,7 +66,15 @@ export default function Dashboard() {
 
       <main className="max-w-5xl mx-auto px-6 py-10">
         {/* ── Welcome banner ── */}
-        <div className="relative overflow-hidden rounded-2xl bg-linear-to-r from-indigo-600 via-indigo-500 to-violet-600 text-white p-8 mb-8 shadow-lg shadow-indigo-200/40">
+        <div className="relative overflow-hidden rounded-2xl bg-linear-to-r from-indigo-600 via-indigo-500 to-violet-600 text-white p-8 mb-8 shadow-lg shadow-indigo-200/40 animate-fade-up">
+          <div
+            className="absolute inset-0 pointer-events-none opacity-30"
+            style={{
+              backgroundImage: 'radial-gradient(circle, rgb(255 255 255 / 0.16) 1px, transparent 1px)',
+              backgroundSize: '22px 22px',
+              maskImage: 'radial-gradient(ellipse at 75% 30%, black 20%, transparent 70%)',
+            }}
+          />
           <div className="relative z-10">
             <p className="text-indigo-200 text-xs font-semibold uppercase tracking-widest mb-1">
               {user?.role === 'candidate' ? 'Professional Dashboard' : 'Hiring Dashboard'}
@@ -80,9 +88,9 @@ export default function Dashboard() {
                 : 'Find and hire trusted professionals with verified credibility scores.'}
             </p>
           </div>
-          <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full bg-white/10" />
-          <div className="absolute -bottom-12 -right-4 w-56 h-56 rounded-full bg-white/5" />
-          <div className="absolute top-1/2 right-32 w-20 h-20 rounded-full bg-white/5" />
+          <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full bg-white/10 animate-float" />
+          <div className="absolute -bottom-12 -right-4 w-56 h-56 rounded-full bg-white/5 animate-float" style={{ animationDelay: '2s' }} />
+          <div className="absolute top-1/2 right-32 w-20 h-20 rounded-full bg-white/5 animate-float" style={{ animationDelay: '4s' }} />
         </div>
 
         {/* ── Stats grid ── */}
@@ -90,7 +98,7 @@ export default function Dashboard() {
           {user?.role === 'candidate' ? (
             <>
               {/* Score card */}
-              <div className={`bg-linear-to-br ${scoreBg} rounded-2xl border p-5 shadow-sm hover:shadow-md transition-shadow`}>
+              <div className={`bg-linear-to-br ${scoreBg} rounded-2xl border p-5 shadow-sm card-hover animate-fade-up stagger-1`}>
                 <div className="flex items-start justify-between mb-3">
                   <p className="text-sm font-medium text-gray-600">HireCred Score</p>
                   <span className="text-xl">🏆</span>
@@ -113,7 +121,7 @@ export default function Dashboard() {
               </div>
 
               {/* Profile Views */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow">
+              <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm card-hover animate-fade-up stagger-2">
                 <div className="flex items-start justify-between mb-3">
                   <p className="text-sm font-medium text-gray-500">Profile Views</p>
                   <span className="text-xl">👁</span>
@@ -123,7 +131,7 @@ export default function Dashboard() {
               </div>
 
               {/* Proof Signals */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow">
+              <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm card-hover animate-fade-up stagger-3">
                 <div className="flex items-start justify-between mb-3">
                   <p className="text-sm font-medium text-gray-500">Proof Signals</p>
                   <span className="text-xl">🔗</span>
@@ -169,7 +177,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── Quick Actions ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm animate-fade-up stagger-4">
           <h2 className="text-base font-semibold text-gray-900 mb-5">Quick Actions</h2>
 
           {user?.role === 'candidate' && (
@@ -247,7 +255,7 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <Link
       to={to}
-      className="text-sm text-gray-600 hover:text-indigo-600 font-medium px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
+      className="text-sm text-gray-600 hover:text-indigo-600 font-medium px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors duration-200"
     >
       {children}
     </Link>
@@ -290,7 +298,7 @@ function ClientStatCard({ icon, label, value, hint, accent, to, state }: {
     <Link
       to={to}
       state={state}
-      className={`rounded-2xl border p-5 ${colors[accent]} hover:shadow-md transition-all block group`}
+      className={`rounded-2xl border p-5 ${colors[accent]} card-hover animate-fade-up block group`}
     >
       <div className="flex items-start justify-between mb-3">
         <p className="text-sm font-medium text-gray-600">{label}</p>

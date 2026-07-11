@@ -1,6 +1,6 @@
 # HireCred-v1 — Functionality Pipeline Reference
 
-**Last updated: 2026-06-01**
+**Last updated: 2026-07-11**
 
 Every feature documented end-to-end: frontend → API → router → service → model/DB → response.
 File names are exact paths relative to repo root. Purpose of each step is explained inline.
@@ -183,7 +183,7 @@ If the database is still waking up and a request arrives anyway, the API returns
 | Validation banner | `client/src/components/validation/ValidationWarningBanner.tsx` | Shows server-returned `warnings[]` as non-blocking alerts (never prevents save) |
 | API call | `client/src/lib/api.ts` | `PUT /api/profile/{id}` with full profile body |
 | Router | `server/src/routers/profile.py → update_profile()` | Validates ownership (JWT user must own profile). Updates profile fields. Launches background score task |
-| Background task | `server/src/routers/profile.py` | `asyncio.create_task(compute_score_background(profile_id, db_session))` — does NOT await it; HTTP response returns immediately |
+| Background task | `server/src/services/task_manager.py` | `schedule_rescore(user_id)` — managed queue: 2s debounce coalesces save bursts into one run, dirty-flag queues one follow-up if a save lands mid-run, semaphore caps concurrent LLM pipelines at 2, strong task refs prevent GC-loss. HTTP response returns immediately |
 | Validation service | `server/src/services/validation_service.py` | Checks date overlaps (`_normalize_date` pads months with `zfill(2)` for correct lexicographic sort), URL format, skills consistency. Returns `warnings[]` only — never raises 422 |
 | Score trigger | `server/src/services/credibility_service.py` | Background task runs full pipeline: authenticity → URL checks → LLM scoring → DB upsert |
 | DB write | `profiles` table | SQLAlchemy `session.merge()` on Profile model |
@@ -245,7 +245,11 @@ This pipeline runs every time a profile is saved, a CV is uploaded/deleted, or a
 ```
 Profile save / CV change / Signal change
         ↓
-asyncio.create_task(compute_score_background())
+task_manager.schedule_rescore(user_id)
+  · debounce 2s — burst of saves = one run
+  · dedup — at most 1 run in flight + 1 queued per user
+  · semaphore(2) — bounded concurrency against Ollama
+  · stats exposed at GET /health/queue
         ↓
 credibility_service.py → compute_and_save_score()
         ↓
@@ -299,7 +303,7 @@ credibility_service.py → compute_and_save_score()
 |------|------|-------------|
 | UI | `client/src/components/profile/ScoreWidget.tsx` | "Refresh Score" button, shown only to profile owner |
 | API call | `client/src/lib/api.ts` | `POST /api/profile/{id}/rescore` |
-| Router | `server/src/routers/profile.py → rescore_profile()` | Ownership check, launches `asyncio.create_task(compute_score_background(...))` |
+| Router | `server/src/routers/profile.py → rescore_profile()` | Ownership check + rate limit (5/min), calls `task_manager.schedule_rescore(user_id)` |
 | Response | `{message: "Score recomputation started"}` | Returns instantly. ScoreWidget polls `GET /api/profile/{id}/score` every few seconds via TanStack Query |
 
 ---
@@ -451,11 +455,10 @@ Top 20 candidates ranked by combined metric. Cached 2 minutes with stampede prot
 | Page | `client/src/pages/Leaderboard.tsx` | Fetches `GET /api/leaderboard`. Renders ranked cards |
 | Router | `server/src/routers/leaderboard.py → get_leaderboard()` | Checks `_cache` (module-level dict). Returns cached if fresh |
 | Cache lock | `server/src/routers/leaderboard.py` | `_cache_lock = asyncio.Lock()`. Double-check after acquiring lock (prevents stampede: only one request rebuilds cache) |
-| DB query | `server/src/routers/leaderboard.py` | `SELECT users JOIN profiles JOIN credibility_scores WHERE role=candidate AND is_active AND NOT is_suspicious (or halved weight for medium risk) ORDER BY score DESC` |
-| Appreciation batch | `server/src/routers/leaderboard.py` | Single query: `WHERE to_user_id IN (all_ids) GROUP BY to_user_id` → builds `appr_map` dict. O(1) lookup per user in ranking loop |
-| Ranking formula | `server/src/routers/leaderboard.py` | `0.5 * score + 0.3 * avg_appreciation + 0.2 * proof_signal_count` |
-| Fraud exclusion | `server/src/routers/leaderboard.py` | `risk_level == high` → excluded entirely. `risk_level == medium` → appreciation weight halved |
-| Cache TTL | `server/src/routers/leaderboard.py` | `_cache_ttl = 120` seconds. Stale cache is rebuilt atomically |
+| DB query | `server/src/routers/leaderboard.py → _leaderboard_stmt()` | **Single SQL statement** — joins appreciation + proof-signal aggregates as grouped subqueries, computes the composite rank score as a SQL expression, `ORDER BY rank_score DESC LIMIT 20`. Only 20 rows ever enter Python (previously every eligible candidate was loaded and ranked in Python — O(total users) per cache miss) |
+| Eligibility | same statement | role=candidate, is_active, fraud_risk ≠ high, score ≥ 10, and an INNER join on the appreciation subquery enforces "at least 1 appreciation" |
+| Ranking formula | same statement | `score×0.65 + avg_appreciation×10×weight + min(proof_count,5)×2 + min(views/50,10)×0.5`, where weight = 0.10 for medium fraud risk, else 0.20 |
+| Cache TTL | `server/src/routers/leaderboard.py` | `_CACHE_TTL = 120` seconds. Stale cache is rebuilt atomically. At 1M+ users: replace with materialized view or Redis sorted set (see `INFRASTRUCTURE.md` §5) |
 
 ---
 
@@ -468,11 +471,11 @@ Top 20 candidates ranked by combined metric. Cached 2 minutes with stampede prot
 | UI | `client/src/components/appreciation/AppreciationModal.tsx` | Open from profile. Freeform text input |
 | Auth guard | `client/src/components/appreciation/AppreciationSection.tsx` | Only shown to authenticated `client` role users; not own profile |
 | API call | `client/src/lib/api.ts` | `POST /api/appreciation` with `{to_user_id, content}` |
-| Router | `server/src/routers/appreciation.py → submit_appreciation()` | Validates not self-appreciation, creates record, triggers AI extraction |
+| Router | `server/src/routers/appreciation.py → submit_appreciation()` | Rate-limited 10/min. Validates client role, not-self, recipient exists. AI extraction runs in-path (its ratings are part of the response); the follow-up rescore + fraud analysis run in background |
 | AI extraction | `server/src/ai/appreciation_prompt.py → build_prompt()` | Prompt asks LLM to extract `skill_rating`, `communication_rating`, `reliability_rating` (0–10) + one-sentence summary |
 | LLM call | `server/src/ai/ollama_client.py` | Ollama call with qwen2.5:3b. Timeout handled |
 | Model | `server/src/models/appreciation.py` | `Appreciation(to_user_id, from_user_id, skill_rating, communication_rating, reliability_rating, summary, raw_content)` |
-| Fraud trigger | `server/src/routers/appreciation.py` | After save, triggers `fraud_service.analyze_appreciations(to_user_id, db)` as background task |
+| Background follow-ups | `server/src/services/task_manager.py` | `schedule_rescore(to_user_id)` then `schedule_fraud_check(to_user_id)`. Fraud is **ordered after** the rescore completes — the rescore UPSERTs the whole score row and would otherwise overwrite the fraud penalty/flags. (Previously both ran synchronously inside the POST, adding ~20s of latency) |
 
 ### Fraud Detection
 

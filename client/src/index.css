@@ -1,13 +1,86 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────
+   HireCred design system
+   Infrastructure-grade UI: Inter type, subtle motion, refined
+   surfaces. All animations respect prefers-reduced-motion.
+   ───────────────────────────────────────────────────────────── */
+
+@theme {
+  --font-sans: "Inter", "Inter Fallback", system-ui, "Segoe UI", Roboto, sans-serif;
+
+  --animate-fade-up: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fade-in: fade-in 0.4s ease-out both;
+  --animate-scale-in: scale-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-slide-in-right: slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-shimmer: shimmer 1.8s linear infinite;
+  --animate-float: float 7s ease-in-out infinite;
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(16px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to   { background-position: 200% 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-10px); }
+  }
+}
+
 * {
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+::selection {
+  background: rgb(99 102 241 / 0.18);
+}
+
+/* Slim, unobtrusive scrollbars (infra-site staple) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(203 213 225) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(203 213 225);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(148 163 184);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Hide browser-native password reveal button (Edge/Chrome) to avoid duplicate with our custom toggle */
@@ -22,10 +95,76 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
 
 @layer components {
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white;
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white
+           transition-[box-shadow,border-color] duration-200
+           focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-400
+           hover:border-gray-400;
   }
 
   .label {
     @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+
+  /* Elevated card with hover lift — use on interactive cards */
+  .card-hover {
+    @apply transition-[transform,box-shadow,border-color] duration-300 ease-out
+           hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-100/60;
+  }
+
+  /* Glassy sticky surface (navs, floating bars) */
+  .glass {
+    @apply bg-white/75 backdrop-blur-xl border-b border-gray-200/80
+           supports-[backdrop-filter]:bg-white/60;
+  }
+
+  /* Faint engineering dot-grid backdrop */
+  .bg-grid {
+    background-image: radial-gradient(circle, rgb(99 102 241 / 0.10) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Skeleton shimmer for loading states */
+  .skeleton {
+    @apply rounded-lg bg-gray-100;
+    background-image: linear-gradient(
+      100deg,
+      transparent 30%,
+      rgb(255 255 255 / 0.85) 50%,
+      transparent 70%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.8s linear infinite;
+  }
+}
+
+@layer utilities {
+  /* Staggered entrance delays — pair with animate-fade-up */
+  .stagger-1 { animation-delay: 60ms; }
+  .stagger-2 { animation-delay: 120ms; }
+  .stagger-3 { animation-delay: 180ms; }
+  .stagger-4 { animation-delay: 240ms; }
+  .stagger-5 { animation-delay: 300ms; }
+  .stagger-6 { animation-delay: 360ms; }
+}
+
+/* Buttons & links get gentle press feedback globally */
+button, a {
+  -webkit-tap-highlight-color: transparent;
+}
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+button {
+  transition: transform 0.12s ease, background-color 0.18s ease, color 0.18s ease,
+              border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+/* Accessibility: kill all decorative motion for users who ask for it */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

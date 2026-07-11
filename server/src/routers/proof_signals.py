@@ -15,7 +15,7 @@ from src.models.profile import Profile
 from src.models.proof_signal import ProofSignal, SignalType
 from src.schemas.profile import ProofSignalCreate, ProofSignalResponse
 from src.middleware.auth import get_current_user
-from src.services.credibility_service import compute_and_save_score
+from src.services.task_manager import schedule_rescore
 from src.services.validation_service import validate_url, validate_image_content
 
 router = APIRouter(prefix="/api/profile", tags=["proof-signals"])
@@ -24,6 +24,13 @@ UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 ALLOWED_MIME = {"image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"}
+_MIME_EXT = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "application/pdf": ".pdf",
+}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
@@ -61,7 +68,7 @@ async def add_proof_signal(
     db.add(signal)
     await db.commit()
     await db.refresh(signal)
-    asyncio.create_task(compute_and_save_score(user_id))
+    schedule_rescore(user_id)
     return signal
 
 
@@ -87,7 +94,7 @@ async def delete_proof_signal(
 
     await db.delete(signal)
     await db.commit()
-    asyncio.create_task(compute_and_save_score(user_id))
+    schedule_rescore(user_id)
 
 
 @router.post("/{user_id}/signals/upload", response_model=ProofSignalResponse, status_code=status.HTTP_201_CREATED)
@@ -111,13 +118,17 @@ async def upload_screenshot_signal(
         img_err = validate_image_content(contents)
         if img_err:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=img_err.message)
+    elif file.content_type == "application/pdf" and not contents.startswith(b"%PDF-"):
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="File content is not a valid PDF")
 
     profile = await _get_own_profile(user_id, current_user, db)
 
-    ext = Path(file.filename or "upload").suffix
+    # Extension chosen from the validated content type — never from the
+    # client-supplied filename.
+    ext = _MIME_EXT[file.content_type]
     filename = f"{uuid.uuid4()}{ext}"
     dest = UPLOADS_DIR / filename
-    dest.write_bytes(contents)
+    await asyncio.to_thread(dest.write_bytes, contents)
 
     signal = ProofSignal(
         profile_id=profile.id,
@@ -129,5 +140,5 @@ async def upload_screenshot_signal(
     db.add(signal)
     await db.commit()
     await db.refresh(signal)
-    asyncio.create_task(compute_and_save_score(user_id))
+    schedule_rescore(user_id)
     return signal

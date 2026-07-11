@@ -1,9 +1,10 @@
 # HireCred-v1 — Complete Project Guide
 
-**Last updated: 2026-06-01**
+**Last updated: 2026-07-11**
 
 > Single source of truth for architecture, features, file locations, and data flows.
 > For quick local setup see `LOCAL_SETUP.md`. For testing see `TESTING_GUIDE.md`.
+> For scaling design, million-user rationale, and the production stack see `INFRASTRUCTURE.md`.
 
 ---
 
@@ -69,6 +70,7 @@ hireCred-v1/
         │   ├── validate.py      # /api/validate (url, skills, consistency)
         │   └── reports.py       # /api/reports + /api/admin (two routers in one file)
         ├── services/
+        │   ├── task_manager.py         # background job queue: debounce, dedup, semaphore, GC-safe refs
         │   ├── credibility_service.py  # main scoring pipeline (background tasks)
         │   ├── cv_extractor.py         # pdfplumber helpers (not called by pipeline)
         │   ├── authenticity_service.py # 16-point fake/duplicate/sci-fi heuristics
@@ -98,10 +100,16 @@ hireCred-v1/
 Any write operation (profile save / CV upload / proof signal add or delete)
     ↓ data saved to DB
     ↓ HTTP response returned immediately (< 1s)
-    ↓ asyncio.create_task: compute_and_save_score(user_id)  ← background
+    ↓ task_manager.schedule_rescore(user_id)  ← managed background queue
+      (2s debounce coalesces save bursts; max 2 concurrent pipelines;
+       a save arriving mid-run queues exactly one follow-up run;
+       strong task refs so runs can't be garbage-collected mid-flight)
 
-Manual trigger: POST /api/profile/{id}/rescore
-    ↓ asyncio.create_task: compute_and_save_score(user_id)  ← background
+Manual trigger: POST /api/profile/{id}/rescore  (rate-limited 5/min)
+    ↓ task_manager.schedule_rescore(user_id)  ← same queue
+
+Queue observability: GET /health/queue
+    → {scheduled, coalesced, completed, failed, in_flight, dirty_pending}
 
 compute_and_save_score():
     1. Load profile + proof signals from DB
@@ -159,7 +167,9 @@ Per URL:
 3. Extract `<title>` from first 10 KB of HTML
 4. Match title against dead-page patterns: "domain for sale", "404 not found", "coming soon", "parked domain", "account suspended", "welcome to nginx", etc.
 
-Timeout: 4 seconds per request. Results cached 60 seconds.
+Timeout: 4 seconds per request, max 5 concurrent checks (semaphore). One shared
+HTTP connection pool (no per-check client churn). Results cached in a bounded
+LRU (512 entries, 5-minute TTL) so the cache can't grow into a memory leak.
 
 ---
 
@@ -293,6 +303,15 @@ Frontend displays them as toasts/banners. Score is penalized by the same issues 
 | DB `pool_pre_ping` | True | Prevents "connection is closed" on Neon serverless |
 | DB `pool_recycle` | 1800s | Refreshes idle connections every 30 min |
 | Ollama timeout | 120s | Enough for qwen2.5:3b on CPU (1–3 tok/s × 200 tokens); rule-based fallback if exceeded |
+| Ollama HTTP client | shared pool | One persistent connection instead of a handshake per LLM call |
 | URL check timeout | 4s | Faster failure detection per URL |
-| Score task | `asyncio.create_task()` | Never blocks HTTP response |
-| Leaderboard cache | 2 min | Avoids repeated heavy query |
+| URL check cache | LRU 512 / 5 min | Bounded — cannot leak memory on a long-running server |
+| Score tasks | `task_manager.schedule_rescore()` | Debounced + deduplicated + semaphore(2); never blocks HTTP response; GC-safe |
+| Appreciation follow-ups | background | Rescore + fraud analysis (2 LLM pipelines) no longer run inside the POST request |
+| Leaderboard | SQL-ranked, `LIMIT 20` | Ranking computed in PostgreSQL; only 20 rows ever cross the wire (was: all candidates loaded into Python) |
+| Leaderboard cache | 2 min + lock | Avoids repeated heavy query and cache-stampede |
+| Profile views | atomic SQL increment | `SET views = views + 1` — no read-modify-write race |
+| Rate limits | search 30/min, rescore 5/min, appreciation 10/min | Protects the LLM tier from being a DoS vector |
+
+> Deep-dive on every one of these decisions, the 1M-user scaling path, and
+> production stack recommendations: see **`INFRASTRUCTURE.md`**.

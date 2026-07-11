@@ -140,7 +140,7 @@ export default function SearchPage() {
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-indigo-50">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+      <header className="glass px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <Link to="/dashboard" className="text-lg font-bold bg-linear-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
           HireCred
         </Link>
@@ -154,19 +154,25 @@ export default function SearchPage() {
 
       <main className="max-w-3xl mx-auto px-4 py-12">
         {/* Heading */}
-        <div className="text-center mb-10">
+        <div className="text-center mb-10 animate-fade-up">
           <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-600 text-xs font-semibold px-3.5 py-1.5 rounded-full mb-4 border border-indigo-100">
             <Bot className="h-3.5 w-3.5" /> AI-Powered Search
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-3 tracking-tight">Find Trusted Professionals</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-3 tracking-tight">
+            Find{' '}
+            <span className="bg-linear-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
+              Trusted
+            </span>{' '}
+            Professionals
+          </h1>
           <p className="text-gray-500 max-w-lg mx-auto text-sm leading-relaxed">
             Describe who you're looking for in plain English. Our AI ranks candidates by credibility score, skills match, and verified client ratings.
           </p>
         </div>
 
         {/* Search input */}
-        <form onSubmit={handleSubmit} className="mb-6">
-          <div className="flex gap-3 bg-white border border-gray-200 rounded-2xl p-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent transition-all">
+        <form onSubmit={handleSubmit} className="mb-6 animate-fade-up stagger-1">
+          <div className="flex gap-3 bg-white border border-gray-200 rounded-2xl p-2 shadow-sm hover:shadow-md focus-within:ring-2 focus-within:ring-indigo-500/60 focus-within:border-indigo-300 focus-within:shadow-lg focus-within:shadow-indigo-100/60 transition-all duration-300">
             <div className="flex-1 flex items-center gap-2 pl-2">
               <Search className="text-gray-400 shrink-0 h-4 w-4" />
               <input
@@ -180,7 +186,7 @@ export default function SearchPage() {
             <button
               type="submit"
               disabled={isPending || !query.trim()}
-              className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm shadow-indigo-200 shrink-0 whitespace-nowrap"
+              className="px-5 py-2.5 bg-linear-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-all duration-200 shadow-md shadow-indigo-300/50 shrink-0 whitespace-nowrap"
             >
               {isPending ? 'Searching…' : 'Search'}
             </button>
@@ -189,7 +195,7 @@ export default function SearchPage() {
 
         {/* Example queries */}
         {!hasSearched && !isPending && (
-          <div className="mb-8">
+          <div className="mb-8 animate-fade-up stagger-2">
             <p className="text-xs text-gray-400 font-medium text-center mb-3">Try these examples</p>
             <div className="flex flex-wrap gap-2 justify-center">
               {EXAMPLE_QUERIES.map((tip) => (
@@ -291,7 +297,8 @@ export default function SearchPage() {
                   return (
                     <div
                       key={candidate.user_id}
-                      className={`bg-white border rounded-2xl p-5 flex items-start gap-4 hover:shadow-md transition-all group ${
+                      style={{ animationDelay: `${Math.min(idx, 8) * 55}ms` }}
+                      className={`bg-white border rounded-2xl p-5 flex items-start gap-4 card-hover animate-fade-up group ${
                         isTop3 ? 'border-indigo-100 hover:border-indigo-200' : 'border-gray-100 hover:border-gray-200'
                       }`}
                     >

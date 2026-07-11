@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -10,8 +10,8 @@ from src.models.appreciation import Appreciation
 from src.models.user import User, UserRole
 from src.middleware.auth import get_current_user
 from src.ai.appreciation_prompt import analyze_feedback
-from src.services.credibility_service import compute_and_save_score
-from src.services.fraud_service import run_fraud_detection
+from src.services.task_manager import schedule_rescore, schedule_fraud_check
+from src.rate_limiter import limiter
 
 router = APIRouter(prefix="/api/appreciation", tags=["appreciation"])
 
@@ -53,7 +53,9 @@ class AppreciationCreated(BaseModel):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("", response_model=AppreciationCreated, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def submit_appreciation(
+    request: Request,
     body: AppreciationCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -96,9 +98,11 @@ async def submit_appreciation(
     await db.commit()
     await db.refresh(appreciation)
 
-    # Recompute credibility score immediately, then apply fraud detection.
-    await compute_and_save_score(body.to_user_id)
-    await run_fraud_detection(body.to_user_id)
+    # Rescore + fraud detection are two more LLM pipelines (~10 s each) —
+    # they run in the background so this request returns as soon as the
+    # appreciation itself is analyzed and saved.
+    schedule_rescore(body.to_user_id)
+    schedule_fraud_check(body.to_user_id)
 
     appreciation_resp = AppreciationResponse(
         id=appreciation.id,
