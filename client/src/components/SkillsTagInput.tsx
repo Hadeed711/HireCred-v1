@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent, useRef } from 'react'
+import { X } from 'lucide-react'
 
 interface Props {
   skills: string[]
@@ -49,7 +50,7 @@ export default function SkillsTagInput({ skills, onChange, disabled }: Props) {
               onClick={(e) => { e.stopPropagation(); removeSkill(skill) }}
               className="opacity-60 hover:opacity-100 leading-none"
             >
-              ×
+              <X className="h-3 w-3" />
             </button>
           )}
         </span>

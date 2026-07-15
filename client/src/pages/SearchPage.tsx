@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
-import { Bot, Search, AlertTriangle, BriefcaseBusiness, Trophy } from 'lucide-react'
+import { Bot, Search, AlertTriangle, BriefcaseBusiness, Trophy, Medal, Star, MessageCircle, ArrowRight } from 'lucide-react'
 
 interface CandidateResult {
   user_id: string
@@ -303,10 +303,18 @@ export default function SearchPage() {
                       }`}
                     >
                       {/* Rank */}
-                      <div className={`text-sm font-bold w-7 shrink-0 mt-1 transition-colors ${
-                        idx === 0 ? 'text-yellow-500' : idx === 1 ? 'text-gray-400' : idx === 2 ? 'text-orange-400' : 'text-gray-300 group-hover:text-indigo-400'
-                      }`}>
-                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                      <div className="w-7 shrink-0 mt-1 flex justify-center">
+                        {isTop3 ? (
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                            idx === 0 ? 'bg-yellow-100 text-yellow-600' : idx === 1 ? 'bg-gray-100 text-gray-500' : 'bg-orange-100 text-orange-500'
+                          }`}>
+                            <Medal className="h-4 w-4" />
+                          </div>
+                        ) : (
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-indigo-400 transition-colors mt-1">
+                            #{idx + 1}
+                          </span>
+                        )}
                       </div>
 
                       {/* Avatar */}
@@ -362,17 +370,25 @@ export default function SearchPage() {
 
                         {/* Footer row */}
                         <div className="flex items-center justify-between flex-wrap gap-2">
-                          <span className="text-xs text-gray-400">
-                            {candidate.appreciation_count > 0
-                              ? `⭐ ${candidate.avg_appreciation.toFixed(1)} avg · ${candidate.appreciation_count} review${candidate.appreciation_count !== 1 ? 's' : ''}`
-                              : '💬 No reviews yet'}
+                          <span className="text-xs text-gray-400 flex items-center gap-1">
+                            {candidate.appreciation_count > 0 ? (
+                              <>
+                                <Star className="h-3 w-3 text-amber-400 fill-amber-400" />
+                                {candidate.avg_appreciation.toFixed(1)} avg · {candidate.appreciation_count} review{candidate.appreciation_count !== 1 ? 's' : ''}
+                              </>
+                            ) : (
+                              <>
+                                <MessageCircle className="h-3 w-3 text-gray-300" />
+                                No reviews yet
+                              </>
+                            )}
                           </span>
                           <Link
                             to={`/profile/${candidate.uid ?? candidate.user_id}`}
                             state={{ from: '/search' }}
-                            className="text-xs px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm shadow-indigo-200"
+                            className="text-xs px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm shadow-indigo-200 inline-flex items-center gap-1 group/btn"
                           >
-                            View Profile →
+                            View Profile <ArrowRight className="h-3 w-3 transition-transform group-hover/btn:translate-x-0.5" />
                           </Link>
                         </div>
                       </div>

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { X, Loader2 } from 'lucide-react'
 import api from '../../lib/api'
 import toast from 'react-hot-toast'
 import RatingBar from './RatingBar'
@@ -60,7 +61,7 @@ export default function AppreciationModal({ toUserId, toUserName, onClose }: Pro
           <>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Give Appreciation</h2>
-              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"><X className="h-4 w-4" /></button>
             </div>
             <p className="text-sm text-gray-500 mb-4">
               Describe your experience working with <span className="font-medium text-gray-700">{toUserName}</span>.
@@ -88,7 +89,9 @@ export default function AppreciationModal({ toUserId, toUserName, onClose }: Pro
                   disabled={isPending}
                   className="flex-1 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                 >
-                  {isPending ? 'Analyzing…' : 'Submit'}
+                  {isPending ? (
+                    <span className="inline-flex items-center gap-1.5"><Loader2 className="animate-spin h-3.5 w-3.5" /> Analyzing…</span>
+                  ) : 'Submit'}
                 </button>
               </div>
             </form>
@@ -97,7 +100,7 @@ export default function AppreciationModal({ toUserId, toUserName, onClose }: Pro
           <>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Here's what we understood</h2>
-              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"><X className="h-4 w-4" /></button>
             </div>
             <p className="text-sm text-gray-500 italic mb-5">"{aiResult.summary}"</p>
             <div className="space-y-3 mb-6">

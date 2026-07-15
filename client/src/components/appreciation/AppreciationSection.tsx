@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { BadgeCheck, AlertTriangle, MessageSquareHeart } from 'lucide-react'
 import api from '../../lib/api'
 import RatingBar from './RatingBar'
 
@@ -36,8 +37,10 @@ export default function AppreciationSection({ userId, fraudRisk }: Props) {
 
   if (!data || data.count === 0) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-200 p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Appreciations</h2>
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 animate-fade-up">
+        <h2 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
+          <MessageSquareHeart className="h-4.5 w-4.5 text-indigo-600" /> Appreciations
+        </h2>
         <p className="text-xs text-gray-400 mb-3">Feedback submitted by hiring clients who worked with this professional.</p>
         <p className="text-sm text-gray-400">No appreciations yet.</p>
       </div>
@@ -53,18 +56,18 @@ export default function AppreciationSection({ userId, fraudRisk }: Props) {
             <span className="ml-2 text-sm font-normal text-gray-400">({data.count})</span>
           </h2>
           {data.count >= 3 && fraudRisk === 'low' && (
-            <span className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-0.5">
-              ✓ Verified Feedback
+            <span className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-0.5 inline-flex items-center gap-1">
+              <BadgeCheck className="h-3.5 w-3.5" /> Verified Feedback
             </span>
           )}
           {fraudRisk === 'medium' && (
-            <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-0.5">
-              ⚠ Under Review
+            <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-0.5 inline-flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" /> Under Review
             </span>
           )}
           {fraudRisk === 'high' && (
-            <span className="text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-0.5">
-              ⚠ Suspicious Reviews
+            <span className="text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-0.5 inline-flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" /> Suspicious Reviews
             </span>
           )}
         </div>

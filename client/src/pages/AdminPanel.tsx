@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, AlertTriangle, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
@@ -84,9 +85,9 @@ export default function AdminPanel() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/dashboard')}
-            className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg"
+            className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1.5 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg transition-colors"
           >
-            ← Back
+            <ArrowLeft className="h-4 w-4" /> Back
           </button>
           <span className="text-sm font-bold text-gray-900">HireCred Admin</span>
           <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-semibold border border-red-200">ADMIN</span>
@@ -165,9 +166,9 @@ export default function AdminPanel() {
                           <span className="font-semibold">Reported:</span>{' '}
                           <button
                             onClick={() => navigate(`/profile/${r.reported_user_id}`, { state: { from: '/admin' } })}
-                            className="text-indigo-600 hover:underline"
+                            className="text-indigo-600 hover:underline inline-flex items-center gap-1"
                           >
-                            {r.reported_user_name || r.reported_user_id.slice(0, 8)} ↗
+                            {r.reported_user_name || r.reported_user_id.slice(0, 8)} <ExternalLink className="h-3 w-3" />
                           </button>
                         </p>
 
@@ -293,8 +294,8 @@ export default function AdminPanel() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {u.is_suspicious && (
-                              <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700 border border-amber-200">
-                                ⚠ Suspicious
+                              <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" /> Suspicious
                               </span>
                             )}
                             {!u.is_active && (

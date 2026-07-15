@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  ArrowLeft, UserRound, Wrench, BriefcaseBusiness, FolderGit2, FileText,
+  ShieldCheck, GitBranch, Globe, MessageCircle, Image, Plus, Trash2, X,
+  CheckCircle2, AlertTriangle, Loader2, Eye, ExternalLink,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
@@ -48,8 +53,8 @@ function useUrlCheck(): [UrlState, string | null, (url: string) => void] {
 
 function UrlStatusIcon({ state }: { state: UrlState }) {
   if (state === 'checking') return <span className="text-gray-400 text-xs animate-pulse">Checking…</span>
-  if (state === 'ok') return <span className="text-emerald-600 text-xs">✓ Live</span>
-  if (state === 'warn') return <span className="text-amber-600 text-xs">⚠ Not reachable</span>
+  if (state === 'ok') return <span className="text-emerald-600 text-xs inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Live</span>
+  if (state === 'warn') return <span className="text-amber-600 text-xs inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Not reachable</span>
   return null
 }
 
@@ -62,11 +67,11 @@ const SIGNAL_LABELS: Record<SignalType, string> = {
   screenshot: 'Work Screenshot',
 }
 
-const SIGNAL_ICONS: Record<SignalType, string> = {
-  github: '🔗',
-  portfolio_link: '🌐',
-  client_reference: '💬',
-  screenshot: '🖼️',
+const SIGNAL_ICONS: Record<SignalType, React.ElementType> = {
+  github: GitBranch,
+  portfolio_link: Globe,
+  client_reference: MessageCircle,
+  screenshot: Image,
 }
 
 // ── ExperienceForm ────────────────────────────────────────────────────────────
@@ -153,8 +158,8 @@ function ExperienceForm({
         />
         {descErr && <p className="text-xs text-amber-600 mt-1">{descErr}</p>}
       </div>
-      <button type="button" onClick={onRemove} className="text-red-500 text-sm hover:underline">
-        Remove
+      <button type="button" onClick={onRemove} className="text-red-500 text-sm inline-flex items-center gap-1.5 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors">
+        <Trash2 className="h-3.5 w-3.5" /> Remove
       </button>
     </div>
   )
@@ -207,7 +212,7 @@ function PortfolioForm({
           {urlErr && <p className="text-xs text-red-600 mt-1">{urlErr}</p>}
           {dupErr && <p className="text-xs text-red-600 mt-1">{dupErr}</p>}
           {!urlErr && urlState === 'warn' && urlNote && (
-            <p className="text-xs text-amber-600 mt-1">⚠ {urlNote}</p>
+            <p className="text-xs text-amber-600 mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3 shrink-0" /> {urlNote}</p>
           )}
         </div>
       </div>
@@ -228,8 +233,8 @@ function PortfolioForm({
           onChange={(tags) => onChange({ ...item, tech_stack: tags })}
         />
       </div>
-      <button type="button" onClick={onRemove} className="text-red-500 text-sm hover:underline">
-        Remove
+      <button type="button" onClick={onRemove} className="text-red-500 text-sm inline-flex items-center gap-1.5 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors">
+        <Trash2 className="h-3.5 w-3.5" /> Remove
       </button>
     </div>
   )
@@ -470,11 +475,11 @@ export default function ProfileEditor() {
   const completionColor = completionPct >= 80 ? 'bg-emerald-500' : completionPct >= 50 ? 'bg-amber-400' : 'bg-red-400'
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-indigo-50">
       {/* Sticky header */}
       <header className="glass px-6 py-3.5 flex items-center justify-between sticky top-0 z-10">
         <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1.5 hover:bg-gray-100 px-2 py-1.5 rounded-lg transition-colors">
-          ← Dashboard
+          <ArrowLeft className="h-4 w-4" /> Dashboard
         </button>
         <div className="hidden sm:flex items-center gap-3">
           <div className="w-32 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -485,9 +490,9 @@ export default function ProfileEditor() {
         <div className="flex gap-2">
           <button
             onClick={() => navigate(`/profile/${user?.uid ?? user?.id}`, { state: { from: '/profile/edit' } })}
-            className="text-sm px-3 py-1.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-600"
+            className="text-sm px-3 py-1.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-600 inline-flex items-center gap-1.5"
           >
-            Preview
+            <Eye className="h-3.5 w-3.5" /> Preview
           </button>
           <button
             onClick={handleSave}
@@ -496,10 +501,7 @@ export default function ProfileEditor() {
           >
             {saveMutation.isPending ? (
               <span className="flex items-center gap-1.5">
-                <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+                <Loader2 className="animate-spin h-3.5 w-3.5" />
                 Saving…
               </span>
             ) : 'Save changes'}
@@ -513,14 +515,14 @@ export default function ProfileEditor() {
         <ValidationWarningBanner warnings={activeWarnings} />
 
         {/* Basic Info */}
-        <Section title="Basic Info">
+        <Section title="Basic Info" icon={UserRound} stagger="stagger-1">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="label">Professional Title</label>
                 <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Full-Stack Developer" />
                 {consistencyWarn && (
-                  <p className="text-xs text-amber-600 mt-1">⚠ {consistencyWarn}</p>
+                  <p className="text-xs text-amber-600 mt-1 flex items-start gap-1"><AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" /> {consistencyWarn}</p>
                 )}
               </div>
               <div>
@@ -545,7 +547,7 @@ export default function ProfileEditor() {
         </Section>
 
         {/* Skills */}
-        <Section title="Skills">
+        <Section title="Skills" icon={Wrench} stagger="stagger-2">
           <SkillsTagInput skills={skills} onChange={handleSkillsChange} />
           <p className="mt-1.5 text-xs text-gray-400">Press Enter or comma to add. Duplicates are removed automatically.</p>
         </Section>
@@ -553,13 +555,15 @@ export default function ProfileEditor() {
         {/* Experience */}
         <Section
           title="Experience"
+          icon={BriefcaseBusiness}
+          stagger="stagger-3"
           action={
             <button
               type="button"
               onClick={() => setExperience([...experience, { id: nanoid(), title: '', company: '', start_date: '', end_date: null, current: false, description: '' }])}
-              className="text-sm text-indigo-600 hover:underline"
+              className="text-sm text-indigo-600 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition-colors font-medium"
             >
-              + Add
+              <Plus className="h-3.5 w-3.5" /> Add
             </button>
           }
         >
@@ -581,13 +585,15 @@ export default function ProfileEditor() {
         {/* Portfolio */}
         <Section
           title="Portfolio"
+          icon={FolderGit2}
+          stagger="stagger-4"
           action={
             <button
               type="button"
               onClick={() => setPortfolio([...portfolio, { id: nanoid(), title: '', description: '', url: '', tech_stack: [] }])}
-              className="text-sm text-indigo-600 hover:underline"
+              className="text-sm text-indigo-600 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition-colors font-medium"
             >
-              + Add
+              <Plus className="h-3.5 w-3.5" /> Add
             </button>
           }
         >
@@ -607,7 +613,7 @@ export default function ProfileEditor() {
         </Section>
 
         {/* CV Upload */}
-        <Section title="CV / Resume">
+        <Section title="CV / Resume" icon={FileText} stagger="stagger-5">
           <p className="text-sm text-gray-500 mb-4">
             Upload your CV to help hirers review your full background. Accepted format: PDF only (max 5 MB).
             The CV must be a real, complete document.
@@ -615,7 +621,7 @@ export default function ProfileEditor() {
 
           {profile?.cv_url && (
             <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-4">
-              <span className="text-emerald-600 text-lg">✓</span>
+              <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-emerald-800">CV uploaded</p>
                 {profile.cv_analysis?.experience_summary && (
@@ -626,17 +632,17 @@ export default function ProfileEditor() {
                 href={profile.cv_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors font-medium"
+                className="text-xs px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors font-medium inline-flex items-center gap-1"
               >
-                View CV
+                View CV <ExternalLink className="h-3 w-3" />
               </a>
               <button
                 type="button"
                 onClick={handleCvRemove}
                 title="Remove CV"
-                className="w-6 h-6 flex items-center justify-center rounded-full text-emerald-400 hover:text-red-500 hover:bg-red-50 transition-colors text-base font-bold leading-none"
+                className="w-6 h-6 flex items-center justify-center rounded-full text-emerald-400 hover:text-red-500 hover:bg-red-50 transition-colors"
               >
-                ×
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
@@ -659,14 +665,16 @@ export default function ProfileEditor() {
                 disabled={cvUploading}
                 className="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
               >
-                {cvUploading ? 'Uploading & analyzing…' : 'Upload CV'}
+                {cvUploading ? (
+                  <span className="flex items-center gap-1.5"><Loader2 className="animate-spin h-3.5 w-3.5" /> Uploading & analyzing…</span>
+                ) : 'Upload CV'}
               </button>
             )}
           </div>
         </Section>
 
         {/* Proof Signals */}
-        <Section title="Proof Signals">
+        <Section title="Proof Signals" icon={ShieldCheck} stagger="stagger-6">
           <p className="text-sm text-gray-500 mb-4">
             Proof signals verify your claims. Add GitHub links, portfolio links, client references, or work screenshots.
             Only real, working URLs are accepted.
@@ -674,10 +682,14 @@ export default function ProfileEditor() {
 
           {profile?.proof_signals && profile.proof_signals.length > 0 && (
             <div className="space-y-2 mb-6">
-              {profile.proof_signals.map((s: ProofSignal) => (
-                <div key={s.id} className="flex items-start justify-between p-3 bg-white border border-gray-200 rounded-lg">
+              {profile.proof_signals.map((s: ProofSignal) => {
+                const SignalIcon = SIGNAL_ICONS[s.signal_type]
+                return (
+                <div key={s.id} className="flex items-start justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-indigo-200 transition-colors">
                   <div className="flex items-start gap-3">
-                    <span className="text-xl mt-0.5">{SIGNAL_ICONS[s.signal_type]}</span>
+                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0 mt-0.5">
+                      <SignalIcon className="h-4 w-4 text-indigo-500" />
+                    </div>
                     <div>
                       <p className="text-sm font-medium text-gray-800">{s.title}</p>
                       <p className="text-xs text-gray-400 capitalize">{SIGNAL_LABELS[s.signal_type]}</p>
@@ -696,13 +708,13 @@ export default function ProfileEditor() {
                   </div>
                   <button
                     onClick={() => deleteSignalMutation.mutate(s.id)}
-                    className="text-gray-300 hover:text-red-400 text-lg leading-none ml-2 shrink-0"
+                    className="text-gray-300 hover:text-red-400 p-1 rounded-lg hover:bg-red-50 transition-colors ml-2 shrink-0"
                     title="Remove"
                   >
-                    ×
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
-              ))}
+              )})}
             </div>
           )}
 
@@ -751,7 +763,7 @@ export default function ProfileEditor() {
                   <p className="text-xs text-red-600 mt-1">{validateUrl(signalUrl)}</p>
                 )}
                 {!validateUrl(signalUrl) && signalUrlState === 'warn' && signalUrlNote && (
-                  <p className="text-xs text-amber-600 mt-1">⚠ {signalUrlNote}</p>
+                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3 shrink-0" /> {signalUrlNote}</p>
                 )}
               </div>
             )}
@@ -779,11 +791,20 @@ export default function ProfileEditor() {
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
 
-function Section({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+function Section({ title, icon: Icon, stagger, children, action }: {
+  title: string
+  icon?: React.ElementType
+  stagger?: string
+  children: React.ReactNode
+  action?: React.ReactNode
+}) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-6">
+    <div className={`bg-white rounded-2xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow duration-300 animate-fade-up ${stagger ?? ''}`}>
       <div className="flex items-center justify-between mb-5">
-        <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+        <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+          {Icon && <Icon className="h-4.5 w-4.5 text-indigo-600" />}
+          {title}
+        </h2>
         {action}
       </div>
       {children}

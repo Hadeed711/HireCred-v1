@@ -17,7 +17,8 @@ from src.schemas.profile import ProfileUpdate, ProfileResponse, ScoreResponse
 from src.middleware.auth import get_current_user, get_optional_user
 from src.rate_limiter import limiter
 from src.services.task_manager import schedule_rescore
-from src.services.validation_service import validate_full_profile
+from src.services.validation_service import validate_full_profile, validate_cv_text
+from src.services.cv_extractor import extract_cv_text_and_sections
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,13 @@ ALLOWED_CV_MIME = {"application/pdf"}
 MAX_CV_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
+
+
+def _public_cv_analysis(cv: dict | None) -> dict | None:
+    """Strip internal caching fields (raw text excerpt) from the API payload."""
+    if not cv:
+        return cv
+    return {k: v for k, v in cv.items() if k not in ("text_excerpt", "version")}
 
 
 def _build_profile_response(profile: Profile, is_owner: bool = False) -> ProfileResponse:
@@ -47,7 +55,7 @@ def _build_profile_response(profile: Profile, is_owner: bool = False) -> Profile
         profile_views=profile.profile_views,
         avatar_url=profile.avatar_url,
         cv_url=cv_url,
-        cv_analysis=profile.cv_analysis,
+        cv_analysis=_public_cv_analysis(profile.cv_analysis),
         proof_signals=profile.proof_signals,
         created_at=profile.created_at,
         updated_at=profile.updated_at,
@@ -220,6 +228,14 @@ async def upload_cv(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="File content is not a valid PDF.",
         )
+
+    # Fast content gate: extract text now and reject empty/scanned/template
+    # CVs with immediate feedback. The deep AI analysis + profile match runs
+    # in the background rescore pipeline.
+    extracted = await asyncio.to_thread(extract_cv_text_and_sections, data)
+    cv_err = validate_cv_text(extracted["text"])
+    if cv_err:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=cv_err.message)
 
     # Server-chosen filename — never derived from client input.
     filename = f"{user_id}.pdf"

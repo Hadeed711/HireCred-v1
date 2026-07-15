@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CredibilityScore } from '../../lib/types'
-import { Trophy, ShieldAlert, Link2, AlertTriangle, CheckCircle2, CircleX, RefreshCw } from 'lucide-react'
+import { Trophy, ShieldAlert, Link2, AlertTriangle, CheckCircle2, CircleX, RefreshCw, FileText } from 'lucide-react'
 import api from '../../lib/api'
 import toast from 'react-hot-toast'
 
@@ -119,6 +119,10 @@ export default function ScoreWidget({ score, isLoading, userId, isOwn }: Props) 
   const risks = (score.risks || []).filter((r) => r.trim())
   const urlWarnings = (score.url_warnings || []).filter((w) => w.trim())
   const authFlags = (score.authenticity_flags || []).filter((f) => f.trim())
+  const cvWarnings = (score.cv_match_warnings || []).filter((w) => w.trim())
+  const cvMatch = score.cv_match_score
+  const cvMatchColor = cvMatch == null ? '' : cvMatch >= 60 ? 'text-emerald-600' : cvMatch >= 30 ? 'text-amber-600' : 'text-red-500'
+  const cvMatchBar = cvMatch == null ? '' : cvMatch >= 60 ? 'bg-emerald-500' : cvMatch >= 30 ? 'bg-amber-400' : 'bg-red-400'
 
   return (
     <div className={`rounded-2xl border p-6 bg-linear-to-br ${bgClass} animate-fade-up`}>
@@ -185,6 +189,32 @@ export default function ScoreWidget({ score, isLoading, userId, isOwn }: Props) 
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {cvMatch != null && (
+            <div>
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5" /> CV ↔ Profile Match
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-1.5 bg-white/60 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${cvMatchBar}`}
+                    style={{ width: `${cvMatch}%` }}
+                  />
+                </div>
+                <span className={`text-sm font-bold ${cvMatchColor}`}>{cvMatch}/100</span>
+              </div>
+              {cvWarnings.length > 0 && (
+                <ul className="space-y-1.5 mt-2">
+                  {cvWarnings.slice(0, 3).map((w, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" /> {w}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 

@@ -147,7 +147,26 @@ def _build_prompt(d: dict) -> str:
     else:
         lines.append("Proof signals: None")
 
-    lines.append(f"CV uploaded: {'Yes' if d.get('has_cv') else 'No'}")
+    cv = d.get("cv_analysis")
+    cv_match = d.get("cv_match")
+    if cv:
+        status = (
+            "analysed, authentic"
+            if cv.get("is_authentic", True)
+            else f"REJECTED ({(cv.get('rejection_reason') or 'fake/template content')[:80]})"
+        )
+        lines.append(f"CV uploaded: Yes — {status}")
+        if cv.get("cv_title"):
+            lines.append(f"  CV title: {cv['cv_title'][:60]}")
+        cv_skills = cv.get("extracted_skills") or []
+        if cv_skills:
+            lines.append(f"  CV skills: {', '.join(cv_skills[:8])}")
+        if cv_match:
+            lines.append(f"  CV-to-profile match: {cv_match.get('match_score', 0)}/100")
+            for w in (cv_match.get("warnings") or [])[:2]:
+                lines.append(f"  CV warning: {w[:100]}")
+    else:
+        lines.append(f"CV uploaded: {'Yes (not yet analysed)' if d.get('has_cv') else 'No'}")
 
     # ── Authenticity flags ─────────────────────────────────────────────────────
     flags = (d.get("authenticity_flags") or [])[:5]

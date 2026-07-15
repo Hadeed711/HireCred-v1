@@ -623,7 +623,14 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
             else 0.0
         ) if profession_keywords else 0.0
 
-        cred_score_eff = cred_score * 1.2 if trust_priority else cred_score
+        cred_score_eff = min(cred_score * 1.2, 100.0) if trust_priority else cred_score
+
+        # "senior React developer" → nudge candidates with a deeper work
+        # history up the ranking (no seniority field exists, so experience
+        # entry count is the best available proxy).
+        exp_level_bonus = 0.0
+        if parsed.get('experience_level') == 'senior':
+            exp_level_bonus = min(len(profile.experience or []) * 1.5, 5.0)
 
         rank = _rank_score(
             cred_score_eff,
@@ -631,7 +638,7 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
             avg_appr,
             profile.profile_views or 0,
             max_views,
-            profession_exact_bonus,
+            profession_exact_bonus + exp_level_bonus,
             relevance_norm,
         )
 

@@ -1,5 +1,9 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import {
+  Trophy, Eye, ShieldCheck, Search, MessageCircle, Lightbulb,
+  AlertTriangle, CheckCircle2, CircleAlert, ArrowRight,
+} from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import api from '../lib/api'
 import type { Profile, CredibilityScore } from '../lib/types'
@@ -101,7 +105,7 @@ export default function Dashboard() {
               <div className={`bg-linear-to-br ${scoreBg} rounded-2xl border p-5 shadow-sm card-hover animate-fade-up stagger-1`}>
                 <div className="flex items-start justify-between mb-3">
                   <p className="text-sm font-medium text-gray-600">HireCred Score</p>
-                  <span className="text-xl">🏆</span>
+                  <IconChip><Trophy className="h-4 w-4 text-amber-500" /></IconChip>
                 </div>
                 <p className={`text-4xl font-bold mb-0.5 ${scoreColor}`}>
                   {score ? score.score : '—'}
@@ -124,7 +128,7 @@ export default function Dashboard() {
               <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm card-hover animate-fade-up stagger-2">
                 <div className="flex items-start justify-between mb-3">
                   <p className="text-sm font-medium text-gray-500">Profile Views</p>
-                  <span className="text-xl">👁</span>
+                  <IconChip><Eye className="h-4 w-4 text-indigo-500" /></IconChip>
                 </div>
                 <p className="text-4xl font-bold text-gray-900 mb-0.5">{profile?.profile_views ?? 0}</p>
                 <p className="text-xs text-gray-400">All time views</p>
@@ -134,7 +138,7 @@ export default function Dashboard() {
               <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm card-hover animate-fade-up stagger-3">
                 <div className="flex items-start justify-between mb-3">
                   <p className="text-sm font-medium text-gray-500">Proof Signals</p>
-                  <span className="text-xl">🔗</span>
+                  <IconChip><ShieldCheck className="h-4 w-4 text-emerald-500" /></IconChip>
                 </div>
                 <p className="text-4xl font-bold text-gray-900 mb-0.5">
                   {profile?.proof_signals?.length ?? 0}
@@ -149,7 +153,7 @@ export default function Dashboard() {
           ) : (
             <>
               <ClientStatCard
-                icon="🔍"
+                icon={Search}
                 label="Smart Search"
                 value="AI-Powered"
                 hint="Natural language candidate search"
@@ -157,7 +161,7 @@ export default function Dashboard() {
                 to="/search"
               />
               <ClientStatCard
-                icon="🏆"
+                icon={Trophy}
                 label="Trust Leaderboard"
                 value="Live"
                 hint="Top-ranked verified professionals"
@@ -165,7 +169,7 @@ export default function Dashboard() {
                 to="/leaderboard"
               />
               <ClientStatCard
-                icon="💬"
+                icon={MessageCircle}
                 label="Inbox"
                 value="Open"
                 hint="Message candidates directly"
@@ -194,7 +198,7 @@ export default function Dashboard() {
               {/* Incomplete profile warning */}
               {profile && !profileComplete && (
                 <div className="mt-5 flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                  <span className="text-amber-500 text-lg mt-0.5">⚠</span>
+                  <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-semibold text-amber-800">Profile incomplete</p>
                     <p className="text-sm text-amber-700 mt-0.5">
@@ -212,13 +216,13 @@ export default function Dashboard() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {score.strengths.slice(0, 3).map((s, i) => (
                       <div key={i} className="flex items-start gap-2 text-sm text-gray-700 bg-emerald-50 rounded-lg px-3 py-2">
-                        <span className="text-emerald-500 mt-0.5 shrink-0 font-bold">✓</span>
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
                         {s}
                       </div>
                     ))}
                     {score.risks.slice(0, 2).map((r, i) => (
                       <div key={i} className="flex items-start gap-2 text-sm text-gray-700 bg-red-50 rounded-lg px-3 py-2">
-                        <span className="text-red-400 mt-0.5 shrink-0 font-bold">!</span>
+                        <CircleAlert className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
                         {r}
                       </div>
                     ))}
@@ -237,7 +241,9 @@ export default function Dashboard() {
               </div>
               {/* Client tips */}
               <div className="mt-2 p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
-                <p className="text-sm font-semibold text-indigo-800 mb-1">💡 How to get the best results</p>
+                <p className="text-sm font-semibold text-indigo-800 mb-1 flex items-center gap-1.5">
+                  <Lightbulb className="h-4 w-4 text-indigo-500" /> How to get the best results
+                </p>
                 <p className="text-xs text-indigo-600 leading-relaxed">
                   Use natural language in search — e.g. <em>"reliable React developer with real project experience"</em>.
                   Candidates are ranked by HireCred Score, skill match, and verified appreciation ratings.
@@ -278,8 +284,16 @@ function ActionButton({ to, state, primary, children }: { to: string; state?: un
   )
 }
 
-function ClientStatCard({ icon, label, value, hint, accent, to, state }: {
-  icon: string; label: string; value: string; hint: string
+function IconChip({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="w-9 h-9 rounded-xl bg-white/80 border border-gray-100 shadow-sm flex items-center justify-center shrink-0">
+      {children}
+    </div>
+  )
+}
+
+function ClientStatCard({ icon: Icon, label, value, hint, accent, to, state }: {
+  icon: React.ElementType; label: string; value: string; hint: string
   accent: 'indigo' | 'violet' | 'emerald'
   to: string
   state?: unknown
@@ -294,6 +308,11 @@ function ClientStatCard({ icon, label, value, hint, accent, to, state }: {
     violet: 'text-violet-700',
     emerald: 'text-emerald-700',
   }
+  const iconColors = {
+    indigo: 'text-indigo-500',
+    violet: 'text-violet-500',
+    emerald: 'text-emerald-500',
+  }
   return (
     <Link
       to={to}
@@ -302,12 +321,12 @@ function ClientStatCard({ icon, label, value, hint, accent, to, state }: {
     >
       <div className="flex items-start justify-between mb-3">
         <p className="text-sm font-medium text-gray-600">{label}</p>
-        <span className="text-xl">{icon}</span>
+        <IconChip><Icon className={`h-4 w-4 ${iconColors[accent]}`} /></IconChip>
       </div>
       <p className={`text-2xl font-bold mb-1 ${textColors[accent]}`}>{value}</p>
       <p className="text-xs text-gray-500">{hint}</p>
-      <p className={`text-xs font-semibold mt-2 ${textColors[accent]} opacity-0 group-hover:opacity-100 transition-opacity`}>
-        Open →
+      <p className={`text-xs font-semibold mt-2 flex items-center gap-1 ${textColors[accent]} opacity-0 group-hover:opacity-100 transition-opacity`}>
+        Open <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
       </p>
     </Link>
   )

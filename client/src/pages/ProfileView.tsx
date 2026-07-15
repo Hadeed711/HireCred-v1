@@ -4,7 +4,11 @@ import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
-import { ArrowLeft, AlertTriangle, MapPin, Eye, BriefcaseBusiness, FileText, Flag } from 'lucide-react'
+import {
+  ArrowLeft, AlertTriangle, MapPin, Eye, BriefcaseBusiness, FileText, Flag,
+  GitBranch, Globe, MessageCircle, Image, ExternalLink, X, SearchX, ClipboardList,
+  Wrench, FolderGit2, ShieldCheck, ArrowRight,
+} from 'lucide-react'
 import type {
   Profile, ExperienceItem, PortfolioItem, ProofSignal, SignalType,
   CredibilityScore, CvAnalysis, ReportReason,
@@ -13,11 +17,11 @@ import ScoreWidget from '../components/profile/ScoreWidget'
 import AppreciationModal from '../components/appreciation/AppreciationModal'
 import AppreciationSection from '../components/appreciation/AppreciationSection'
 
-const SIGNAL_ICONS: Record<SignalType, string> = {
-  github: '🔗',
-  portfolio_link: '🌐',
-  client_reference: '💬',
-  screenshot: '🖼️',
+const SIGNAL_ICONS: Record<SignalType, React.ElementType> = {
+  github: GitBranch,
+  portfolio_link: Globe,
+  client_reference: MessageCircle,
+  screenshot: Image,
 }
 
 const SIGNAL_LABELS: Record<SignalType, string> = {
@@ -96,7 +100,9 @@ export default function ProfileView() {
   if (isError || !profile) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center flex-col gap-4">
-        <div className="text-5xl">😕</div>
+        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center">
+          <SearchX className="h-8 w-8 text-gray-400" />
+        </div>
         <p className="text-gray-700 font-semibold">Profile not found</p>
         <button
           onClick={() => navigate('/dashboard')}
@@ -272,7 +278,7 @@ export default function ProfileView() {
 
         {/* ── Skills ── */}
         {profile.skills.length > 0 && (
-          <ViewSection title="Skills" icon={BriefcaseBusiness}>
+          <ViewSection title="Skills" icon={Wrench}>
             <div className="flex flex-wrap gap-2">
               {profile.skills.map((s) => (
                 <span key={s} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl text-sm font-medium border border-indigo-100">
@@ -311,7 +317,7 @@ export default function ProfileView() {
 
         {/* ── Portfolio ── */}
         {profile.portfolio.length > 0 && (
-          <ViewSection title="Portfolio" icon={FileText}>
+          <ViewSection title="Portfolio" icon={FolderGit2}>
             <div className="grid grid-cols-1 gap-4">
               {(profile.portfolio as PortfolioItem[]).map((item, i) => (
                 <div key={item.id || i} className="border border-gray-200 rounded-xl p-4 hover:border-indigo-200 hover:bg-indigo-50/30 transition-colors group">
@@ -324,9 +330,9 @@ export default function ProfileView() {
                             href={item.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-md hover:bg-indigo-200 transition-colors font-medium shrink-0"
+                            className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-md hover:bg-indigo-200 transition-colors font-medium shrink-0 inline-flex items-center gap-1"
                           >
-                            View →
+                            View <ExternalLink className="h-3 w-3" />
                           </a>
                         )}
                       </div>
@@ -358,12 +364,14 @@ export default function ProfileView() {
 
         {/* ── Proof Signals ── */}
         {profile.proof_signals.length > 0 && (
-          <ViewSection title="Proof Signals" icon={FileText}>
+          <ViewSection title="Proof Signals" icon={ShieldCheck}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {profile.proof_signals.map((s: ProofSignal) => (
+              {profile.proof_signals.map((s: ProofSignal) => {
+                const SignalIcon = SIGNAL_ICONS[s.signal_type]
+                return (
                 <div key={s.id} className="flex items-start gap-3 p-3.5 bg-gray-50 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 ${SIGNAL_COLORS[s.signal_type]}`}>
-                    {SIGNAL_ICONS[s.signal_type]}
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${SIGNAL_COLORS[s.signal_type]}`}>
+                    <SignalIcon className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-gray-800 leading-tight">{s.title}</p>
@@ -374,25 +382,27 @@ export default function ProfileView() {
                       </a>
                     )}
                     {s.file_path && (
-                      <a href={`/uploads/${s.file_path}`} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline">
-                        View uploaded file ↗
+                      <a href={`/uploads/${s.file_path}`} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline inline-flex items-center gap-1">
+                        View uploaded file <ExternalLink className="h-3 w-3" />
                       </a>
                     )}
                     {s.description && <p className="text-xs text-gray-500 mt-0.5">{s.description}</p>}
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           </ViewSection>
         )}
 
         {!profile.bio && profile.skills.length === 0 && profile.experience.length === 0 && (
           <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center">
-            <p className="text-4xl mb-3">📝</p>
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-3">
+              <ClipboardList className="h-7 w-7 text-indigo-400" />
+            </div>
             <p className="text-gray-600 font-medium">This profile hasn't been filled in yet.</p>
             {isOwn && (
-              <Link to="/profile/edit" className="mt-3 inline-block text-sm px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
-                Complete your profile →
+              <Link to="/profile/edit" className="mt-3 inline-flex items-center gap-1.5 text-sm px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
+                Complete your profile <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             )}
           </div>
@@ -463,7 +473,9 @@ function ReportModal({
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-bold text-gray-900">Report Account</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
         <p className="text-sm text-gray-500 mb-5">
@@ -550,9 +562,9 @@ function CvSection({ cvUrl, cvAnalysis }: { cvUrl: string; cvAnalysis: CvAnalysi
           href={cvUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="shrink-0 text-sm px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium shadow-sm shadow-indigo-200"
+          className="shrink-0 text-sm px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium shadow-sm shadow-indigo-200 inline-flex items-center gap-1.5"
         >
-          View CV ↗
+          View CV <ExternalLink className="h-3.5 w-3.5" />
         </a>
       </div>
     </ViewSection>

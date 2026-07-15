@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, MessageCircle, ImageIcon, SendHorizonal, Trash2 } from 'lucide-react'
+import { ArrowLeft, MessageCircle, ImageIcon, SendHorizonal, Trash2, X } from 'lucide-react'
 import api from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
 import toast from 'react-hot-toast'
@@ -183,7 +183,9 @@ export default function Inbox() {
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
           onClick={() => setLightbox(null)}
         >
-          <button className="absolute top-4 right-4 text-white text-3xl leading-none" onClick={() => setLightbox(null)}>×</button>
+          <button className="absolute top-4 right-4 text-white p-2 rounded-full hover:bg-white/10 transition-colors" onClick={() => setLightbox(null)}>
+            <X className="h-6 w-6" />
+          </button>
           <img src={lightbox} className="max-w-full max-h-full rounded-xl" alt="Full size" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
@@ -392,9 +394,9 @@ export default function Inbox() {
                   )}
                   <button
                     onClick={clearImage}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-700 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-500 transition-colors"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-700 text-white rounded-full flex items-center justify-center hover:bg-red-500 transition-colors"
                   >
-                    ×
+                    <X className="h-3 w-3" />
                   </button>
                 </div>
                 <span className="text-xs text-gray-400">{imageFile?.name}</span>
@@ -453,7 +455,9 @@ export default function Inbox() {
           </div>
         ) : (
           <div className="hidden md:flex flex-1 flex-col items-center justify-center bg-gray-50 gap-4">
-            <div className="w-16 h-16 rounded-3xl bg-white border border-gray-200 flex items-center justify-center text-3xl shadow-sm">💬</div>
+            <div className="w-16 h-16 rounded-3xl bg-white border border-gray-200 flex items-center justify-center shadow-sm">
+              <MessageCircle className="h-7 w-7 text-indigo-400" />
+            </div>
             <div className="text-center">
               <p className="text-sm font-semibold text-gray-700">Select a conversation</p>
               <p className="text-xs text-gray-400 mt-1">Choose from your messages to start chatting.</p>

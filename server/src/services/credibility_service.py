@@ -2,6 +2,7 @@ import asyncio
 import uuid
 import logging
 from datetime import datetime
+from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -11,13 +12,80 @@ from src.database import AsyncSessionLocal
 from src.models.credibility_score import CredibilityScore, FraudRisk
 from src.models.profile import Profile
 from src.ai.credibility_prompt import evaluate_profile
+from src.ai.cv_prompt import analyze_cv
 from src.services.authenticity_service import check_profile_authenticity, compute_url_warnings
+from src.services.cv_extractor import extract_cv_text_and_sections, compute_cv_profile_match
+from src.services.validation_service import validate_cv_text
 from src.routers.leaderboard import invalidate_leaderboard_cache
 
 # Limit concurrent outbound URL checks to avoid exhausting the connection pool
 _URL_CHECK_SEM = asyncio.Semaphore(5)
 
+_CV_DIR = Path(__file__).parent.parent.parent / "uploads" / "cv"
+# Bump to invalidate previously cached cv_analysis payloads
+_CV_ANALYSIS_VERSION = 2
+
 logger = logging.getLogger(__name__)
+
+
+async def _analyze_cv_file(profile: Profile) -> tuple[dict | None, bool]:
+    """
+    Ensure profile.cv_analysis is populated for the uploaded CV.
+
+    Runs pdfplumber extraction + heuristic authenticity checks + the Ollama
+    CV prompt, and caches everything (including a text excerpt used for the
+    profile-match check) in the cv_analysis JSONB column.
+
+    Returns (cv_analysis, changed) — `changed` is True when a fresh analysis
+    was computed and must be persisted.
+    """
+    if not profile.cv_file_path:
+        return None, False
+
+    cached = profile.cv_analysis
+    if cached and cached.get("version") == _CV_ANALYSIS_VERSION:
+        return cached, False
+
+    cv_path = _CV_DIR / profile.cv_file_path
+    try:
+        pdf_bytes = await asyncio.to_thread(cv_path.read_bytes)
+    except OSError as exc:
+        logger.warning("CV file unreadable for profile %s: %s", profile.id, exc)
+        return None, False
+
+    extracted = await asyncio.to_thread(extract_cv_text_and_sections, pdf_bytes)
+
+    is_authentic = True
+    rejection_reason = ""
+    text_err = validate_cv_text(extracted["text"])
+    if text_err:
+        is_authentic = False
+        rejection_reason = text_err.message
+
+    ai_data: dict = {}
+    try:
+        ai_data = await asyncio.wait_for(
+            analyze_cv(extracted["text"], extracted["sections"]), timeout=20.0
+        )
+    except Exception as exc:
+        logger.warning("CV AI analysis unavailable (%s); using extraction-only data", exc)
+
+    if ai_data and not ai_data.get("is_authentic", True):
+        is_authentic = False
+        rejection_reason = rejection_reason or ai_data.get("rejection_reason", "CV appears to be a template.")
+
+    analysis = {
+        "version": _CV_ANALYSIS_VERSION,
+        "extracted_skills": ai_data.get("extracted_skills", []),
+        "experience_summary": ai_data.get("experience_summary", ""),
+        "cv_title": ai_data.get("cv_title", ""),
+        "is_authentic": is_authentic,
+        "rejection_reason": rejection_reason,
+        "sections": extracted["sections"],
+        "word_count": extracted["word_count"],
+        "text_excerpt": extracted["text"][:3000],
+    }
+    return analysis, True
 
 
 def _rule_based_score(profile_data: dict) -> dict:
@@ -64,9 +132,13 @@ def _rule_based_score(profile_data: dict) -> dict:
         risks.append("No proof signals added")
 
     cv = profile_data.get("cv_analysis") or {}
+    cv_match = profile_data.get("cv_match") or {}
     if cv.get("is_authentic"):
         score += 6
         strengths.append("CV uploaded and verified")
+        if cv_match.get("passed"):
+            score += 6
+            strengths.append("CV content matches profile claims")
 
     return {
         "credibility_score": min(score, 100),
@@ -144,8 +216,26 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
                 for ps in profile.proof_signals
             ]
 
-            # ── Step 1: Check whether a CV file is present (no analysis) ───────
+            # ── Step 1: CV analysis (extraction + AI + profile match) ─────────
             has_cv = bool(profile.cv_file_path)
+            cv_analysis, cv_changed = await _analyze_cv_file(profile)
+            if cv_changed:
+                profile.cv_analysis = cv_analysis
+
+            cv_match: dict | None = None
+            if cv_analysis:
+                cv_match = compute_cv_profile_match(
+                    {
+                        "text": cv_analysis.get("text_excerpt", ""),
+                        "sections": cv_analysis.get("sections", []),
+                        "word_count": cv_analysis.get("word_count", 0),
+                    },
+                    {
+                        "title": profile.title,
+                        "skills": profile.skills or [],
+                        "experience": profile.experience or [],
+                    },
+                )
 
             # ── Step 2: Authenticity heuristic checks ────────────────────────
             profile_data_for_auth = {
@@ -181,6 +271,8 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
                 "portfolio": profile.portfolio or [],
                 "proof_signals": proof_signals_data,
                 "has_cv": has_cv,
+                "cv_analysis": cv_analysis,
+                "cv_match": cv_match,
                 "authenticity_flags": auth_result["flags"],
                 "url_warnings": all_url_warnings,
             }
@@ -208,6 +300,18 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
             if len(all_url_warnings) >= 1:
                 raw_score = max(0, raw_score - min(len(all_url_warnings) * 2, 8))
 
+            # ── Step 7b: CV authenticity / profile-match penalty ──────────────
+            cv_match_warnings = list(cv_match["warnings"]) if cv_match else []
+            if cv_analysis and not cv_analysis.get("is_authentic", True):
+                raw_score = max(0, raw_score - 12)
+                reason = cv_analysis.get("rejection_reason") or "CV appears to be placeholder content."
+                score_data["risks"] = score_data.get("risks", []) + [f"CV rejected: {reason}"]
+            elif cv_match and not cv_match["passed"] and cv_match_warnings:
+                raw_score = max(0, raw_score - min(4 + 2 * len(cv_match_warnings), 10))
+                score_data["risks"] = score_data.get("risks", []) + [
+                    "CV does not match the profile: " + cv_match_warnings[0]
+                ]
+
             score_data["credibility_score"] = max(0, min(100, raw_score))
 
             # ── Step 8: Determine is_suspicious ──────────────────────────────
@@ -233,8 +337,8 @@ async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
                 "fraud_flags": fraud_flags,
                 "is_suspicious": is_suspicious,
                 "authenticity_flags": auth_result["flags"],
-                "cv_match_score": None,
-                "cv_match_warnings": [],
+                "cv_match_score": cv_match["match_score"] if cv_match else None,
+                "cv_match_warnings": cv_match_warnings,
                 "url_warnings": all_url_warnings,
                 "computed_at": datetime.utcnow(),
             }
