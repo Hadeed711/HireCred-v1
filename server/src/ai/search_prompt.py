@@ -31,7 +31,11 @@ Return ONLY valid JSON with this exact structure, no other text:
   "min_credibility_score": 0
 }
 
-experience_level must be "junior", "mid", "senior", or null."""
+experience_level must be "junior", "mid", "senior", or null.
+Seniority words (fresher, fresh graduate, entry-level, intern, trainee, beginner,
+junior, mid-level, senior, lead, principal) describe experience_level ONLY —
+NEVER put them in required_skills or profession_keywords.
+"fresher", "intern", "trainee", "graduate", "entry-level", "beginner" -> experience_level "junior"."""
 
 
 async def parse_search_query(query: str) -> dict:

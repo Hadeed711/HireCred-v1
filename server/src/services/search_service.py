@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _PROFESSION_ALIASES: dict[str, list[str]] = {
+    'mobile': [
+        'mobile developer', 'app developer', 'mobile app developer', 'mobile engineer',
+        'android developer', 'ios developer', 'flutter developer', 'react native developer',
+    ],
     'frontend': [
         'frontend', 'front end', 'front-end', 'frontend engineer', 'frontend developer',
         'ui engineer', 'ui developer', 'ui/ux', 'ui ux', 'react developer', 'web developer',
@@ -49,6 +53,7 @@ _PROFESSION_ALIASES: dict[str, list[str]] = {
 }
 
 _PROFESSION_EXPANSIONS: dict[str, list[str]] = {
+    'mobile': ['android', 'ios', 'flutter', 'react native', 'swift', 'kotlin', 'mobile', 'app'],
     'frontend': ['react', 'reactjs', 'nextjs', 'javascript', 'typescript', 'html', 'css', 'tailwind', 'vue', 'angular', 'web'],
     'backend': ['api', 'node', 'nodejs', 'python', 'django', 'flask', 'java', 'go', 'postgres', 'database', 'server'],
     'full stack': ['frontend', 'backend', 'web', 'api', 'javascript', 'typescript', 'react', 'node'],
@@ -91,6 +96,37 @@ _SEARCH_FILLER_WORDS = {
     'strong', 'good',
 }
 
+# Seniority vocabulary — these words describe the LEVEL of the candidate, never
+# a skill. They map to experience_level and are stripped from skill extraction.
+_SENIORITY_WORDS: dict[str, set[str]] = {
+    'senior': {'senior', 'sr', 'lead', 'principal', 'staff', 'veteran'},
+    'mid': {'mid', 'middle', 'intermediate', 'mid-level', 'midlevel'},
+    'junior': {
+        'junior', 'jr', 'entry', 'entry-level', 'fresher', 'freshers', 'fresh',
+        'graduate', 'graduates', 'intern', 'internship', 'trainee', 'beginner',
+        'newbie', 'starter', 'apprentice',
+    },
+}
+_ALL_SENIORITY_WORDS: set[str] = set().union(*_SENIORITY_WORDS.values())
+
+# Title markers used to include/exclude candidates once a level is requested.
+_TITLE_SENIOR_RE = re.compile(
+    r'\b(senior|sr\.?|lead|principal|staff|head|chief|director|architect|manager)\b', re.IGNORECASE
+)
+_TITLE_JUNIOR_RE = re.compile(
+    r'\b(junior|jr\.?|intern|trainee|associate|graduate|entry[\s-]?level|fresher|apprentice)\b', re.IGNORECASE
+)
+
+
+def _detect_experience_level(text: str, words: list[str]) -> str | None:
+    """Map level vocabulary ('fresher', 'entry level', 'senior', …) to a tier."""
+    if 'entry level' in text or 'entry-level' in text or 'fresh graduate' in text or 'new grad' in text:
+        return 'junior'
+    for level in ('junior', 'senior', 'mid'):
+        if any(w in _SENIORITY_WORDS[level] for w in words):
+            return level
+    return None
+
 # ---------------------------------------------------------------------------
 # Utility helpers
 # ---------------------------------------------------------------------------
@@ -131,7 +167,8 @@ def _collect_skill_terms(text: str) -> list[str]:
             phrases.append(phrase.replace('-', ' '))
     single_words = [
         w for w in words
-        if w not in _STOP_WORDS and w not in _SEARCH_FILLER_WORDS and len(w) > 2
+        if w not in _STOP_WORDS and w not in _SEARCH_FILLER_WORDS
+        and w not in _ALL_SENIORITY_WORDS and len(w) > 2
     ]
     skills = phrases + [w for w in single_words if w not in ' '.join(phrases)]
     normalized = _dedupe([s for s in skills if s in _KNOWN_SKILLS or ' ' in s])
@@ -159,20 +196,19 @@ def _simple_parse_fallback(query: str) -> dict:
         all_aliases: set[str] = set()
         for items in _PROFESSION_ALIASES.values():
             all_aliases.update(items)
-        skills = [s for s in skills if s not in all_aliases]
+        # Drop skills that are aliases OR single words inside a matched alias
+        # ('app developer' matched → the loose word 'app' is not a skill).
+        alias_words: set[str] = set()
+        for kw in profession_keywords:
+            alias_words.update(kw.split())
+        skills = [s for s in skills if s not in all_aliases and s not in alias_words]
 
     trust_words = [w for w in words if w in {
         'reliable', 'trusted', 'verified', 'experienced', 'senior', 'expert',
         'honest', 'professional', 'certified', 'proven',
     }]
 
-    exp_level = None
-    if 'senior' in words or 'sr' in words:
-        exp_level = 'senior'
-    elif 'junior' in words or 'jr' in words or 'entry' in words:
-        exp_level = 'junior'
-    elif 'mid' in words or 'middle' in words or 'intermediate' in words:
-        exp_level = 'mid'
+    exp_level = _detect_experience_level(text, words)
 
     min_score = 0
     if any(p in text for p in ['high credibility', 'high trust', 'highly trusted', 'top credibility', 'most trusted']):
@@ -530,7 +566,12 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
     profession_keywords: list[str] = parsed.get('profession_keywords', [])
     required_skills: list[str] = parsed.get('required_skills', [])
     trust_priority: bool = parsed.get('trust_priority', False)
+    exp_level: str | None = parsed.get('experience_level')
     min_cred: int = int(parsed.get('min_credibility_score', 0))
+
+    # Seniority words must never act as skill filters ('fresher & app' would
+    # match nothing and drop the search into noisy fallbacks).
+    required_skills = [s for s in required_skills if s not in _ALL_SENIORITY_WORDS]
 
     # "trust with deadlines" → filter out very-low-credibility candidates
     if trust_priority and min_cred < 25:
@@ -597,6 +638,12 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
         if loose_terms and not _loose_term_anchored(profile, loose_terms, loose_phrase):
             continue
 
+        # Level gate: a fresher/junior search must never surface senior-titled
+        # candidates — they are categorically irrelevant, not just lower-ranked.
+        title_text = profile.title or ''
+        if exp_level == 'junior' and _TITLE_SENIOR_RE.search(title_text):
+            continue
+
         cred_score = float(cs.score if cs else 0)
         candidate_skills = profile.skills or []
         appr = appr_map.get(user.id)
@@ -625,12 +672,23 @@ async def search_candidates(query: str, db: AsyncSession) -> dict:
 
         cred_score_eff = min(cred_score * 1.2, 100.0) if trust_priority else cred_score
 
-        # "senior React developer" → nudge candidates with a deeper work
-        # history up the ranking (no seniority field exists, so experience
-        # entry count is the best available proxy).
+        # Level-aware ranking. No seniority field exists on profiles, so use
+        # the title markers plus experience-entry count as the best proxies.
         exp_level_bonus = 0.0
-        if parsed.get('experience_level') == 'senior':
-            exp_level_bonus = min(len(profile.experience or []) * 1.5, 5.0)
+        exp_count = len(profile.experience or [])
+        if exp_level == 'junior':
+            if _TITLE_JUNIOR_RE.search(title_text):
+                exp_level_bonus += 8.0
+            if exp_count <= 1:
+                exp_level_bonus += 4.0
+            elif exp_count >= 3:
+                exp_level_bonus -= 4.0
+        elif exp_level == 'senior':
+            if _TITLE_SENIOR_RE.search(title_text):
+                exp_level_bonus += 6.0
+            elif _TITLE_JUNIOR_RE.search(title_text):
+                exp_level_bonus -= 6.0
+            exp_level_bonus += min(exp_count * 1.5, 5.0)
 
         rank = _rank_score(
             cred_score_eff,
