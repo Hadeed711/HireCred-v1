@@ -73,7 +73,15 @@ def extract_cv_text_and_sections(pdf_bytes: bytes) -> dict:
 
 
 def _detect_sections(text: str) -> tuple[list[str], list[str]]:
-    """Return (raw_heading_lines, canonical_section_names) found in text."""
+    """Return (raw_heading_lines, canonical_section_names) found in text.
+
+    Two detection passes per line:
+    1. Structural: ALL-CAPS lines, "Heading:" lines, markdown headers.
+    2. Content: short standalone lines (≤3 words, capitalised, no sentence
+       punctuation) that canonicalize to a known section name — this catches
+       the Title-Case headings most real CVs use ("Work Experience", "Skills")
+       which carry no colon and are not ALL-CAPS.
+    """
     raw_headings: list[str] = []
     canonical: list[str] = []
     seen_canonical: set[str] = set()
@@ -82,12 +90,25 @@ def _detect_sections(text: str) -> tuple[list[str], list[str]]:
         stripped = line.strip()
         if not stripped or len(stripped) < 3 or len(stripped) > 60:
             continue
+
+        canon: str | None = None
         if _HEADING_RE.match(stripped):
             raw_headings.append(stripped)
             canon = _canonicalize(stripped)
-            if canon and canon not in seen_canonical:
-                canonical.append(canon)
-                seen_canonical.add(canon)
+        else:
+            words = stripped.split()
+            if (
+                len(words) <= 3
+                and stripped[0].isupper()
+                and stripped[-1] not in ".,;!?"
+            ):
+                canon = _canonicalize(stripped)
+                if canon:
+                    raw_headings.append(stripped)
+
+        if canon and canon not in seen_canonical:
+            canonical.append(canon)
+            seen_canonical.add(canon)
 
     return raw_headings, canonical
 

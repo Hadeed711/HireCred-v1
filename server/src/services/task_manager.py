@@ -30,8 +30,10 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
-# On a CPU-only Ollama box more than 2 concurrent generations just thrash.
-MAX_CONCURRENT_SCORING = 2
+# A CPU-only Ollama box serves one generation at a time; concurrent pipelines
+# just queue inside Ollama, blow each other's timeouts, and everything falls
+# back to rule-based scoring. Strictly serialize.
+MAX_CONCURRENT_SCORING = 1
 # Burst of saves within this window collapses into a single scoring run.
 DEBOUNCE_SECONDS = 2.0
 

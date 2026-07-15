@@ -3,8 +3,7 @@ import uuid
 import logging
 from datetime import datetime
 from pathlib import Path
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -25,32 +24,48 @@ _CV_DIR = Path(__file__).parent.parent.parent / "uploads" / "cv"
 # Bump to invalidate previously cached cv_analysis payloads
 _CV_ANALYSIS_VERSION = 2
 
+# LLM budgets. Generous on purpose: nothing holds a DB connection while these
+# run, and a CPU-only Ollama box needs the headroom (see task_manager notes).
+_CV_AI_TIMEOUT = 30.0
+_SCORING_AI_TIMEOUT = 30.0
+
 logger = logging.getLogger(__name__)
 
 
-async def _analyze_cv_file(profile: Profile) -> tuple[dict | None, bool]:
+async def _analyze_cv_file(
+    cv_file_path: str | None,
+    cached: dict | None,
+    user_id: uuid.UUID,
+) -> tuple[dict | None, bool]:
     """
-    Ensure profile.cv_analysis is populated for the uploaded CV.
+    Produce the cv_analysis payload for the uploaded CV.
 
     Runs pdfplumber extraction + heuristic authenticity checks + the Ollama
     CV prompt, and caches everything (including a text excerpt used for the
     profile-match check) in the cv_analysis JSONB column.
 
+    A cached result is reused only when the AI step actually succeeded
+    (`ai_enriched`); an extraction-only result from an Ollama outage is
+    retried on the next rescore.
+
     Returns (cv_analysis, changed) — `changed` is True when a fresh analysis
     was computed and must be persisted.
     """
-    if not profile.cv_file_path:
+    if not cv_file_path:
         return None, False
 
-    cached = profile.cv_analysis
-    if cached and cached.get("version") == _CV_ANALYSIS_VERSION:
+    if (
+        cached
+        and cached.get("version") == _CV_ANALYSIS_VERSION
+        and cached.get("ai_enriched", False)
+    ):
         return cached, False
 
-    cv_path = _CV_DIR / profile.cv_file_path
+    cv_path = _CV_DIR / cv_file_path
     try:
         pdf_bytes = await asyncio.to_thread(cv_path.read_bytes)
     except OSError as exc:
-        logger.warning("CV file unreadable for profile %s: %s", profile.id, exc)
+        logger.warning("CV file unreadable for user %s: %s", user_id, exc)
         return None, False
 
     extracted = await asyncio.to_thread(extract_cv_text_and_sections, pdf_bytes)
@@ -65,10 +80,11 @@ async def _analyze_cv_file(profile: Profile) -> tuple[dict | None, bool]:
     ai_data: dict = {}
     try:
         ai_data = await asyncio.wait_for(
-            analyze_cv(extracted["text"], extracted["sections"]), timeout=20.0
+            analyze_cv(extracted["text"], extracted["sections"]), timeout=_CV_AI_TIMEOUT
         )
     except Exception as exc:
-        logger.warning("CV AI analysis unavailable (%s); using extraction-only data", exc)
+        reason = str(exc).strip() or exc.__class__.__name__
+        logger.warning("CV AI analysis unavailable (%s); using extraction-only data", reason)
 
     if ai_data and not ai_data.get("is_authentic", True):
         is_authentic = False
@@ -76,6 +92,7 @@ async def _analyze_cv_file(profile: Profile) -> tuple[dict | None, bool]:
 
     analysis = {
         "version": _CV_ANALYSIS_VERSION,
+        "ai_enriched": bool(ai_data),
         "extracted_skills": ai_data.get("extracted_skills", []),
         "experience_summary": ai_data.get("experience_summary", ""),
         "cv_title": ai_data.get("cv_title", ""),
@@ -189,177 +206,203 @@ async def _check_urls_async(portfolio: list[dict], proof_signals: list[dict]) ->
 
 async def compute_and_save_score(user_id: uuid.UUID) -> dict | None:
     """
-    Open a fresh DB session, load profile, gather evidence, call Ollama
-    (with rule-based fallback), apply authenticity penalties, upsert score.
+    Compute and persist a credibility score in three phases:
+
+      1. Short-lived read session — snapshot all profile data.
+      2. Slow evidence gathering (CV analysis, URL checks, LLM scoring) with
+         NO database connection held. Holding a session open across 30-60s of
+         AI work lets the server/proxy kill the idle connection, which used
+         to abort the whole pipeline at commit time.
+      3. Fresh write session — persist cv_analysis + upsert the score row.
     """
+    # ── Phase 1: read snapshot ────────────────────────────────────────────
     async with AsyncSessionLocal() as db:
-        try:
-            result = await db.execute(
-                select(Profile)
-                .where(Profile.user_id == user_id)
-                .options(selectinload(Profile.proof_signals), selectinload(Profile.user))
-            )
-            profile = result.scalar_one_or_none()
-            if not profile:
-                return None
+        result = await db.execute(
+            select(Profile)
+            .where(Profile.user_id == user_id)
+            .options(selectinload(Profile.proof_signals), selectinload(Profile.user))
+        )
+        profile = result.scalar_one_or_none()
+        if not profile:
+            return None
 
-            owner_name = profile.user.full_name
-            owner_email = profile.user.email
+        owner_name = profile.user.full_name
+        owner_email = profile.user.email
+        proof_signals_data = [
+            {
+                "signal_type": ps.signal_type.value,
+                "title": ps.title,
+                "url": ps.url,
+                "description": ps.description,
+            }
+            for ps in profile.proof_signals
+        ]
+        snapshot = {
+            "title": profile.title,
+            "location": profile.location,
+            "bio": profile.bio,
+            "skills": profile.skills or [],
+            "experience": profile.experience or [],
+            "portfolio": profile.portfolio or [],
+            "cv_file_path": profile.cv_file_path,
+            "cv_analysis": profile.cv_analysis,
+        }
 
-            proof_signals_data = [
+    try:
+        # ── Phase 2: gather evidence (no DB session held) ─────────────────
+
+        # Step 1: CV analysis (extraction + AI + profile match)
+        has_cv = bool(snapshot["cv_file_path"])
+        cv_analysis, cv_changed = await _analyze_cv_file(
+            snapshot["cv_file_path"], snapshot["cv_analysis"], user_id
+        )
+
+        cv_match: dict | None = None
+        if cv_analysis:
+            cv_match = compute_cv_profile_match(
                 {
-                    "signal_type": ps.signal_type.value,
-                    "title": ps.title,
-                    "url": ps.url,
-                    "description": ps.description,
-                }
-                for ps in profile.proof_signals
+                    "text": cv_analysis.get("text_excerpt", ""),
+                    "sections": cv_analysis.get("sections", []),
+                    "word_count": cv_analysis.get("word_count", 0),
+                },
+                {
+                    "title": snapshot["title"],
+                    "skills": snapshot["skills"],
+                    "experience": snapshot["experience"],
+                },
+            )
+
+        # Step 2: Authenticity heuristic checks
+        auth_result = check_profile_authenticity(
+            {
+                "bio": snapshot["bio"],
+                "title": snapshot["title"],
+                "location": snapshot["location"],
+                "skills": snapshot["skills"],
+                "experience": snapshot["experience"],
+                "portfolio": snapshot["portfolio"],
+            },
+            owner_email=owner_email,
+            owner_name=owner_name,
+        )
+
+        # Step 3: URL reachability check
+        url_warnings_async = await _check_urls_async(snapshot["portfolio"], proof_signals_data)
+        url_warnings_format = compute_url_warnings(snapshot["portfolio"], proof_signals_data)
+        all_url_warnings = list(dict.fromkeys(url_warnings_async + url_warnings_format))
+
+        # Step 4: Build full profile_data for AI scoring
+        profile_data = {
+            "owner_name": owner_name,
+            "title": snapshot["title"],
+            "location": snapshot["location"],
+            "bio": snapshot["bio"],
+            "skills": snapshot["skills"],
+            "experience": snapshot["experience"],
+            "portfolio": snapshot["portfolio"],
+            "proof_signals": proof_signals_data,
+            "has_cv": has_cv,
+            "cv_analysis": cv_analysis,
+            "cv_match": cv_match,
+            "authenticity_flags": auth_result["flags"],
+            "url_warnings": all_url_warnings,
+        }
+
+        # Step 5: AI scoring (with full evidence context)
+        try:
+            score_data = await asyncio.wait_for(
+                evaluate_profile(profile_data), timeout=_SCORING_AI_TIMEOUT
+            )
+            if score_data.get("credibility_score") == 0 and not score_data.get("strengths"):
+                raise RuntimeError("AI returned a zero score with no strengths")
+        except Exception as exc:
+            reason = str(exc).strip() or exc.__class__.__name__
+            logger.warning("AI scoring failed for user %s (%s); using rule-based fallback", user_id, reason)
+            score_data = _rule_based_score(profile_data)
+
+        # Step 6: Apply authenticity penalty on top of AI score
+        raw_score = score_data["credibility_score"]
+        auth_penalty = auth_result["penalty"]
+        if auth_penalty > 0:
+            raw_score = max(0, raw_score - auth_penalty)
+            score_data["risks"] = score_data.get("risks", []) + [
+                f"Authenticity penalty ({auth_penalty} pts): " + "; ".join(auth_result["flags"][:2])
             ]
 
-            # ── Step 1: CV analysis (extraction + AI + profile match) ─────────
-            has_cv = bool(profile.cv_file_path)
-            cv_analysis, cv_changed = await _analyze_cv_file(profile)
-            if cv_changed:
-                profile.cv_analysis = cv_analysis
+        # Step 7: Apply URL warning penalty
+        if len(all_url_warnings) >= 1:
+            raw_score = max(0, raw_score - min(len(all_url_warnings) * 2, 8))
 
-            cv_match: dict | None = None
-            if cv_analysis:
-                cv_match = compute_cv_profile_match(
-                    {
-                        "text": cv_analysis.get("text_excerpt", ""),
-                        "sections": cv_analysis.get("sections", []),
-                        "word_count": cv_analysis.get("word_count", 0),
-                    },
-                    {
-                        "title": profile.title,
-                        "skills": profile.skills or [],
-                        "experience": profile.experience or [],
-                    },
-                )
+        # Step 7b: CV authenticity / profile-match penalty
+        cv_match_warnings = list(cv_match["warnings"]) if cv_match else []
+        if cv_analysis and not cv_analysis.get("is_authentic", True):
+            raw_score = max(0, raw_score - 12)
+            reason = cv_analysis.get("rejection_reason") or "CV appears to be placeholder content."
+            score_data["risks"] = score_data.get("risks", []) + [f"CV rejected: {reason}"]
+        elif cv_match and not cv_match["passed"] and cv_match_warnings:
+            raw_score = max(0, raw_score - min(4 + 2 * len(cv_match_warnings), 10))
+            score_data["risks"] = score_data.get("risks", []) + [
+                "CV does not match the profile: " + cv_match_warnings[0]
+            ]
 
-            # ── Step 2: Authenticity heuristic checks ────────────────────────
-            profile_data_for_auth = {
-                "bio": profile.bio,
-                "title": profile.title,
-                "skills": profile.skills or [],
-                "experience": profile.experience or [],
-                "portfolio": profile.portfolio or [],
-            }
-            auth_result = check_profile_authenticity(
-                profile_data_for_auth,
-                owner_email=owner_email,
-                owner_name=owner_name,
+        score_data["credibility_score"] = max(0, min(100, raw_score))
+
+        # Step 8: Determine is_suspicious / fraud_risk
+        is_suspicious = auth_result["risk_level"] in ("medium", "high")
+        fraud_flags = score_data.get("fraud_flags", [])
+        if len(fraud_flags) >= 2 or auth_result["risk_level"] == "high" or auth_penalty >= 25:
+            fraud_risk = FraudRisk.high
+        elif len(fraud_flags) >= 1 or auth_result["risk_level"] == "medium" or auth_penalty >= 12:
+            fraud_risk = FraudRisk.medium
+        else:
+            fraud_risk = FraudRisk.low
+
+        # ── Phase 3: persist on a fresh connection ────────────────────────
+        upsert_values = {
+            "user_id": user_id,
+            "score": score_data["credibility_score"],
+            "strengths": score_data.get("strengths", []),
+            "risks": score_data.get("risks", []),
+            "fraud_risk": fraud_risk,
+            "fraud_flags": fraud_flags,
+            "is_suspicious": is_suspicious,
+            "authenticity_flags": auth_result["flags"],
+            "cv_match_score": cv_match["match_score"] if cv_match else None,
+            "cv_match_warnings": cv_match_warnings,
+            "url_warnings": all_url_warnings,
+            "computed_at": datetime.utcnow(),
+        }
+        upsert_stmt = (
+            pg_insert(CredibilityScore)
+            .values(**upsert_values)
+            .on_conflict_do_update(
+                index_elements=["user_id"],
+                set_={k: v for k, v in upsert_values.items() if k != "user_id"},
             )
+        )
 
-            # ── Step 3: URL reachability check ────────────────────────────────
-            url_warnings_async = await _check_urls_async(
-                profile.portfolio or [], proof_signals_data
-            )
-            url_warnings_format = compute_url_warnings(
-                profile.portfolio or [], proof_signals_data
-            )
-            all_url_warnings = list(dict.fromkeys(url_warnings_async + url_warnings_format))
-
-            # ── Step 4: Build full profile_data for AI scoring ────────────────
-            profile_data = {
-                "owner_name": owner_name,
-                "title": profile.title,
-                "location": profile.location,
-                "bio": profile.bio,
-                "skills": profile.skills or [],
-                "experience": profile.experience or [],
-                "portfolio": profile.portfolio or [],
-                "proof_signals": proof_signals_data,
-                "has_cv": has_cv,
-                "cv_analysis": cv_analysis,
-                "cv_match": cv_match,
-                "authenticity_flags": auth_result["flags"],
-                "url_warnings": all_url_warnings,
-            }
-
-            # ── Step 5: AI scoring (with full evidence context) ───────────────
+        async with AsyncSessionLocal() as db:
             try:
-                score_data = await asyncio.wait_for(evaluate_profile(profile_data), timeout=10.0)
-                if score_data.get("credibility_score") == 0 and not score_data.get("strengths"):
-                    raise RuntimeError("AI returned a zero score with no strengths")
-            except Exception as exc:
-                reason = str(exc).strip() or exc.__class__.__name__
-                logger.warning("AI scoring failed for user %s (%s); using rule-based fallback", user_id, reason)
-                score_data = _rule_based_score(profile_data)
+                if cv_changed:
+                    await db.execute(
+                        update(Profile)
+                        .where(Profile.user_id == user_id)
+                        .values(cv_analysis=cv_analysis)
+                    )
+                await db.execute(upsert_stmt)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
 
-            # ── Step 6: Apply authenticity penalty on top of AI score ─────────
-            raw_score = score_data["credibility_score"]
-            auth_penalty = auth_result["penalty"]
-            if auth_penalty > 0:
-                raw_score = max(0, raw_score - auth_penalty)
-                score_data["risks"] = score_data.get("risks", []) + [
-                    f"Authenticity penalty ({auth_penalty} pts): " + "; ".join(auth_result["flags"][:2])
-                ]
+        invalidate_leaderboard_cache()
+        logger.info(
+            "Credibility score computed for user %s: %d (authenticity_penalty=%d, has_cv=%s, cv_match=%s)",
+            user_id, score_data["credibility_score"], auth_penalty, has_cv,
+            cv_match["match_score"] if cv_match else "n/a",
+        )
+        return score_data
 
-            # ── Step 7: Apply URL warning penalty ─────────────────────────────
-            if len(all_url_warnings) >= 1:
-                raw_score = max(0, raw_score - min(len(all_url_warnings) * 2, 8))
-
-            # ── Step 7b: CV authenticity / profile-match penalty ──────────────
-            cv_match_warnings = list(cv_match["warnings"]) if cv_match else []
-            if cv_analysis and not cv_analysis.get("is_authentic", True):
-                raw_score = max(0, raw_score - 12)
-                reason = cv_analysis.get("rejection_reason") or "CV appears to be placeholder content."
-                score_data["risks"] = score_data.get("risks", []) + [f"CV rejected: {reason}"]
-            elif cv_match and not cv_match["passed"] and cv_match_warnings:
-                raw_score = max(0, raw_score - min(4 + 2 * len(cv_match_warnings), 10))
-                score_data["risks"] = score_data.get("risks", []) + [
-                    "CV does not match the profile: " + cv_match_warnings[0]
-                ]
-
-            score_data["credibility_score"] = max(0, min(100, raw_score))
-
-            # ── Step 8: Determine is_suspicious ──────────────────────────────
-            # High-risk = automatically suspicious; medium = suspicious too
-            is_suspicious = auth_result["risk_level"] in ("medium", "high")
-
-            # Determine fraud_risk from fraud_flags AND authenticity risk level
-            fraud_flags = score_data.get("fraud_flags", [])
-            if len(fraud_flags) >= 2 or auth_result["risk_level"] == "high" or auth_penalty >= 25:
-                fraud_risk = FraudRisk.high
-            elif len(fraud_flags) >= 1 or auth_result["risk_level"] == "medium" or auth_penalty >= 12:
-                fraud_risk = FraudRisk.medium
-            else:
-                fraud_risk = FraudRisk.low
-
-            # ── Step 9: Atomic upsert CredibilityScore ────────────────────────
-            upsert_values = {
-                "user_id": user_id,
-                "score": score_data["credibility_score"],
-                "strengths": score_data.get("strengths", []),
-                "risks": score_data.get("risks", []),
-                "fraud_risk": fraud_risk,
-                "fraud_flags": fraud_flags,
-                "is_suspicious": is_suspicious,
-                "authenticity_flags": auth_result["flags"],
-                "cv_match_score": cv_match["match_score"] if cv_match else None,
-                "cv_match_warnings": cv_match_warnings,
-                "url_warnings": all_url_warnings,
-                "computed_at": datetime.utcnow(),
-            }
-            upsert_stmt = (
-                pg_insert(CredibilityScore)
-                .values(**upsert_values)
-                .on_conflict_do_update(
-                    index_elements=["user_id"],
-                    set_={k: v for k, v in upsert_values.items() if k != "user_id"},
-                )
-            )
-            await db.execute(upsert_stmt)
-            await db.commit()
-            invalidate_leaderboard_cache()
-            logger.info(
-                "Credibility score computed for user %s: %d (authenticity_penalty=%d, has_cv=%s)",
-                user_id, score_data["credibility_score"], auth_penalty, has_cv,
-            )
-            return score_data
-
-        except Exception:
-            logger.exception("Failed to compute credibility score for user %s", user_id)
-            await db.rollback()
-            return None
+    except Exception:
+        logger.exception("Failed to compute credibility score for user %s", user_id)
+        return None
